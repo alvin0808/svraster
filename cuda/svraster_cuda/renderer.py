@@ -9,7 +9,7 @@
 import torch
 from . import _C
 from .meta import VoxGeoModes, DensityModes, CamModes
-
+from .render_neus import render_neus
 from typing import NamedTuple
 
 
@@ -55,6 +55,7 @@ def rasterize_voxels(
     if raster_settings.vox_geo_mode not in VoxGeoModes:
         raise NotImplementedError("Unknown voxel geo mode.")
     if raster_settings.density_mode not in DensityModes:
+        print(raster_settings.density_mode, flush=True)
         raise NotImplementedError("Unknown density mode.")
     if raster_settings.cam_mode not in CamModes:
         raise NotImplementedError("Unknow camera mode.")
@@ -94,15 +95,20 @@ def rasterize_voxels(
 
         raster_settings.debug,
     )
-    in_frusts_idx = torch.where(n_duplicates > 0)[0]
+    #n_duplicates: [N], number of duplicates for each voxel
+    #geomBuffer: voxel이 카메라 프러스텀의 어느 사분면에 속하는지, 복셀의 screen-space bounding box 정보 등
+    in_frusts_idx = torch.where(n_duplicates > 0)[0] 
 
     # Forward voxel parameters
     cam_pos = raster_settings.c2w_matrix[:3, 3]
     vox_params = vox_fn(in_frusts_idx, cam_pos, raster_settings.color_mode)
+    #현재 카메라 뷰에 대해, 각 활성화된 voxel들의 geometry(geos)와 색상(rgbs)을 계산해서 딕셔너리 형태로 넘겨주는 역할
     geos = vox_params['geos']
     rgbs = vox_params['rgbs']
     subdiv_p = vox_params['subdiv_p']
-
+    log_s = vox_params['log_s']
+    log_s_clamped = torch.clamp(log_s, min=0.3)
+    s_val = torch.exp(log_s * 10.0)
     # Some voxel parameters checking
     if geos.shape != (N, 8):
         raise Exception(f"Expect geos in ({N}, 8) but got", geos.shape)
@@ -128,6 +134,7 @@ def rasterize_voxels(
         if raster_settings.gt_color.device != device:
             raise Exception("Device mismatch.")
 
+
     # Involk differentiable voxels rasterization.
     return _RasterizeVoxels.apply(
         raster_settings,
@@ -139,6 +146,7 @@ def rasterize_voxels(
         rgbs,
         raster_settings.vox_feats,
         subdiv_p,
+        s_val,
     )
 
 
@@ -155,6 +163,7 @@ class _RasterizeVoxels(torch.autograd.Function):
         rgbs,
         vox_feats,
         subdiv_p,
+        s_val,
     ):
 
         need_distortion = raster_settings.lambda_dist > 0
@@ -187,9 +196,11 @@ class _RasterizeVoxels(torch.autograd.Function):
             geomBuffer,
 
             raster_settings.debug,
+
+            s_val,
         )
 
-        num_rendered, binningBuffer, imgBuffer, out_color, out_depth, out_normal, out_T, max_w, out_feat = _C.rasterize_voxels(*args)
+        num_rendered, binningBuffer, imgBuffer, out_color, out_depth, out_normal, out_T, max_w, out_sdf0, out_feat = _C.rasterize_voxels(*args)
 
         # In case you want some advanced debuging here
         # ranges, tile_last, n_contrib = _C.unpack_ImageState(raster_settings.image_width, raster_settings.image_height, imgBuffer)
@@ -205,7 +216,7 @@ class _RasterizeVoxels(torch.autograd.Function):
         ctx.save_for_backward(
             octree_paths, vox_centers, vox_lengths,
             geos, rgbs,
-            geomBuffer, binningBuffer, imgBuffer, out_T, out_depth, out_normal)
+            geomBuffer, binningBuffer, imgBuffer, out_T, out_depth, out_normal, s_val, out_sdf0,)
         ctx.mark_non_differentiable(max_w)
         return out_color, out_depth, out_normal, out_T, max_w, out_feat
 
@@ -216,7 +227,7 @@ class _RasterizeVoxels(torch.autograd.Function):
         num_rendered = ctx.num_rendered
         octree_paths, vox_centers, vox_lengths, \
             geos, rgbs, \
-            geomBuffer, binningBuffer, imgBuffer, out_T, out_depth, out_normal = ctx.saved_tensors
+            geomBuffer, binningBuffer, imgBuffer, out_T, out_depth, out_normal, s_val, out_sdf0 = ctx.saved_tensors
 
         if raster_settings.cam_mode == "ortho":
             raise NotImplementedError("Backward pass of orthographic projection is not implemented.")
@@ -262,9 +273,12 @@ class _RasterizeVoxels(torch.autograd.Function):
             out_normal,
 
             raster_settings.debug,
+
+            s_val,
+            out_sdf0,
         )
 
-        dL_dgeos, dL_drgbs, subdiv_p_bw = _C.rasterize_voxels_backward(*args)
+        dL_dgeos, dL_drgbs, subdiv_p_bw, dL_ds_val = _C.rasterize_voxels_backward(*args)
         dL_drgbs = dL_drgbs.view(rgbs.shape).contiguous()
 
         grads = (
@@ -277,6 +291,7 @@ class _RasterizeVoxels(torch.autograd.Function):
             dL_drgbs, # => rgbs
             None, # => vox_feats
             subdiv_p_bw, # => subdivision priority
+            dL_ds_val.view_as(s_val), # 확정아님
         )
 
         return grads

@@ -45,7 +45,7 @@ cfg.bounding = CfgNode(dict(
     # See src/utils/bounding_utils.py for details.
 
     # default | camera_median | camera_max | forward | pcd
-    bound_mode = "default",
+    bound_mode = "default", # The main region bounding mode
     bound_scale = 1.0,        # Scaling factor of the bound
     forward_dist_scale = 1.0, # For forward mode
     pcd_density_rate = 0.1,   # For pcd mode
@@ -55,6 +55,7 @@ cfg.optimizer = CfgNode(dict(
     geo_lr = 0.025,
     sh0_lr = 0.010,
     shs_lr = 0.00025,
+    log_s_lr = 0.001, # osh 아직 확정아님
 
     optim_beta1 = 0.1,
     optim_beta2 = 0.99,
@@ -133,16 +134,29 @@ cfg.regularizer = CfgNode(dict(
     tv_decay_mult = 1.0,
     tv_sparse = False,
 
+    lambda_vg_density = 1e-10,
+    vg_from = 0,
+    vg_until = 10000,
+    vg_decay_every = 1000,
+    vg_decay_mult = 1.0,
+    vg_sparse = False,
+
     # Data augmentation
     ss_aug_max = 1.5,
     rand_bg = False,
+
+    # ekonical loss
+    lambda_eikonal = 0.0,
+    eikonal_num_samples = 1000,
+    eikonal_from = 0,
 ))
 
 cfg.init = CfgNode(dict(
     # Voxel property initialization
-    geo_init = -10.0,
+    geo_init = -10.0, 
     sh0_init = 0.5,
     shs_init = 0.0,
+    log_s_init = 0.2, #수정이 필요 확정 아님
 
     sh_degree_init = 3,
 
@@ -245,3 +259,5 @@ def update_config(cfg_files, cmd_lst=[]):
             # Check if the default values is updated
             if internal_parser.get_default(key) != arg_val:
                 cfg_subgroup[key] = arg_val
+
+

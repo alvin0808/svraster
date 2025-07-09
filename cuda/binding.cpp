@@ -15,6 +15,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include "src/forward.h"
 #include "src/backward.h"
 #include "src/sh_compute.h"
+#include "src/vg_compute.h"
 #include "src/tv_compute.h"
 #include "src/geo_params_gather.h"
 #include "src/utils.h"
@@ -37,6 +38,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("sh_compute_bw", &SH_COMPUTE::sh_compute_bw);
 
     m.def("total_variation_bw", &TV_COMPUTE::total_variation_bw);
+    m.def("voxel_gradient_bw", &VG_COMPUTE::voxel_gradient_bw);
 
     m.def("is_in_cone", &UTILS::is_in_cone);
     m.def("compute_rd", &UTILS::compute_rd);
@@ -57,6 +59,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.attr("VOX_TRIINTERP3_MODE") = pybind11::int_(VOX_TRIINTERP3_MODE);
 
     m.attr("EXP_LINEAR_11_MODE") = pybind11::int_(EXP_LINEAR_11_MODE);
+    m.attr("SDF_MODE") = pybind11::int_(SDF_MODE);
 
     m.attr("CAM_PERSP") = pybind11::int_(CAM_PERSP);
     m.attr("CAM_ORTHO") = pybind11::int_(CAM_ORTHO);

@@ -32,12 +32,15 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include <cooperative_groups.h>
 namespace cg = cooperative_groups;
 
-
+enum DensityMode {
+    DENSITY_EXP_LINEAR_11 = 0,
+    DENSITY_SDF = 1
+};
 namespace FORWARD {
 
 // CUDA sparse voxel rendering.
 template <bool need_feat, bool need_depth, bool need_distortion, bool need_normal, bool track_max_w,
-          int n_samp>
+          int n_samp, int density_mode>
 __global__ void __launch_bounds__(BLOCK_X * BLOCK_Y)
 renderCUDA(
     const uint2* __restrict__ ranges,
@@ -63,10 +66,12 @@ renderCUDA(
     float* __restrict__ out_normal,
     float* __restrict__ out_T,
     float* __restrict__ max_w,
+    float* __restrict__ out_sdf0, 
 
     const int feat_dim,
     const float* __restrict__ feats,
-    float* __restrict__ out_feat)
+    float* __restrict__ out_feat,
+    const float* __restrict__ s_val)
 {
     // Identify current tile and associated min/max pixel range.
     auto block = cg::this_thread_block();
@@ -168,8 +173,10 @@ renderCUDA(
     float D_med = 0.f;
     float Ddist = 0.f;
     int j_lst[BLOCK_SIZE];
-
+    float sdf0_t = -1.f;
+    bool has_sdf0 = false;
     float feat[MAX_FEAT_DIM] = {0.f};
+    bool has_norm = false;
 
     // Iterate over batches until all done or range is complete.
     for (int i = 0; i < rounds; i++, toDo -= BLOCK_SIZE)
@@ -224,7 +231,7 @@ renderCUDA(
         for (int jj = 0; !done && jj <= j_lst_top; jj++)
         {
             int j = j_lst[jj];
-            const int vox_id = collected_vox_id[j];
+            const int vox_id = collected_vox_id[j]; //j번째 교차 voxel id
 
             // Keep track of current position in range.
             contributor_inc = j + 1;
@@ -244,35 +251,67 @@ renderCUDA(
             float vol_int = 0.f;
             float interp_w[8];
             float local_alphas[n_samp];
+            float alpha = 0.f;
+            if (density_mode == SDF_MODE){
+                float vox_l_inv = 1.f / vox_l;
+                float3 p_entry = ro + a * rd;
+                float3 p_exit  = ro + b * rd;
 
-            // Quadrature integral from trilinear sampling.
-            float vox_l_inv = 1.f / vox_l;
-            const float step_sz = (b - a) * (1.f / n_samp);
-            const float3 step = step_sz * rd;
-            float3 pt = ro + (a + 0.5f * step_sz) * rd;
-            float3 qt = (pt - (vox_c - 0.5f * vox_l)) * vox_l_inv;
-            const float3 qt_step = step * vox_l_inv;
-
-            #pragma unroll
-            for (int k=0; k<n_samp; k++, qt=qt+qt_step)
-            {
-                tri_interp_weight(qt, interp_w);
-                float d = 0.f;
+                float3 qt_entry = (p_entry - (vox_c - 0.5f * vox_l))*vox_l_inv;
+                float3 qt_exit  = (p_exit  - (vox_c - 0.5f * vox_l)) *vox_l_inv;
+                tri_interp_weight(qt_entry, interp_w);
+                float sdf_entry = 0.f, sdf_exit = 0.f;
                 for (int iii=0; iii<8; ++iii)
-                    d += geo_params[iii] * interp_w[iii];
+                    sdf_entry += geo_params[iii] * interp_w[iii];
+                // Exit point SDF
+                tri_interp_weight(qt_exit, interp_w);
+                for (int iii=0; iii<8; ++iii)
+                    sdf_exit += geo_params[iii] * interp_w[iii];
+                // Logistic CDF
+                float phi_entry = 1.f / (1.f + expf(-s_val[0] * sdf_entry));
+                float phi_exit  = 1.f / (1.f + expf(-s_val[0] * sdf_exit));
 
-                const float local_vol_int = STEP_SZ_SCALE * step_sz * exp_linear_11(d);
-                vol_int += local_vol_int;
-
-                if (need_depth && n_samp > 1)
-                    local_alphas[k] = min(MAX_ALPHA, 1.f - expf(-local_vol_int));
+                // Neus-style alpha
+                float eps = 1e-6f;
+                alpha = fmaxf((phi_entry - phi_exit) / (phi_entry + eps), 0.f);
+                if (sdf_entry > 0.f && sdf_exit < 0.f && !has_sdf0) {
+                    float sdf_range = sdf_entry - sdf_exit + 1e-6f;
+                    float t_ratio = sdf_entry / sdf_range;
+                    float t_sdf0 = a + (b - a) * t_ratio;
+                    sdf0_t = t_sdf0;
+                    has_sdf0 = true;
+                }
+                if (alpha < MIN_ALPHA)
+                    continue;
             }
+            else{
+                // Quadrature integral from trilinear sampling.
+                float vox_l_inv = 1.f / vox_l;
+                const float step_sz = (b - a) * (1.f / n_samp);
+                const float3 step = step_sz * rd;
+                float3 pt = ro + (a + 0.5f * step_sz) * rd; //sample 지점의 월드 좌표
+                float3 qt = (pt - (vox_c - 0.5f * vox_l)) * vox_l_inv; // sample 지점의 voxel 좌표
+                const float3 qt_step = step * vox_l_inv;
+                #pragma unroll
+                for (int k=0; k<n_samp; k++, qt=qt+qt_step)
+                {
+                    tri_interp_weight(qt, interp_w);
+                    float d = 0.f;
+                    for (int iii=0; iii<8; ++iii)
+                        d += geo_params[iii] * interp_w[iii];
 
-            // Compute alpha from volume integral.
-            float alpha = min(MAX_ALPHA, 1.f - expf(-vol_int));
-            if (alpha < MIN_ALPHA)
-                continue;
+                    const float local_vol_int = STEP_SZ_SCALE * step_sz * exp_linear_11(d); //??
+                    vol_int += local_vol_int;
 
+                    if (need_depth && n_samp > 1)
+                        local_alphas[k] = min(MAX_ALPHA, 1.f - expf(-local_vol_int));
+                }
+
+                // Compute alpha from volume integral.
+                alpha = min(MAX_ALPHA, 1.f - expf(-vol_int));
+                if (alpha < MIN_ALPHA)
+                    continue;
+            }
             // Accumulate to the pixel.
             float pt_w = T * alpha;
             C = C + pt_w * collected_rgb[j];
@@ -287,7 +326,7 @@ renderCUDA(
             {
                 // Mean depth
                 float dval;
-                if (n_samp == 3)
+                if (n_samp == 3 & density_mode != SDF_MODE)
                 {
                     float step_sz = 0.3333333f * (b - a);
                     float a0 = local_alphas[0], a1 = local_alphas[1], a2 = local_alphas[2];
@@ -296,13 +335,14 @@ renderCUDA(
                     float t2 = a + 2.5f * step_sz;
                     dval = a0*t0 + (1.f-a0)*a1*t1 + (1.f-a0)*(1.f-a1)*a2*t2;
                 }
-                else if (n_samp == 2)
+                else if (n_samp == 2 & density_mode != SDF_MODE)
                 {
                     float step_sz = 0.5f * (b - a);
                     float a0 = local_alphas[0], a1 = local_alphas[1];
                     float t0 = a + 0.5f * step_sz;
                     float t1 = a + 1.5f * step_sz;
                     dval = a0*t0 + (1.f-a0)*a1*t1;
+                    // sdf 모드로도 수정해야됨
                 }
                 else
                 {
@@ -316,6 +356,7 @@ renderCUDA(
                     D_med_vox_id = vox_id;
                     D_med_T = T;
                 }
+
             }
 
             // Distortion depth
@@ -325,6 +366,40 @@ renderCUDA(
             // Normal
             if (need_normal)
             {
+                if (density_mode == SDF_MODE && has_sdf0 && !has_norm)
+                {
+                    float3 p_sdf0 = ro + sdf0_t * rd;  // 월드 좌표
+                    float vox_l_inv = 1.f / vox_l;
+                    float3 qt_sdf0 = (p_sdf0 - (vox_c - 0.5f * vox_l)) * vox_l_inv;
+
+                    float x = qt_sdf0.x, y = qt_sdf0.y, z = qt_sdf0.z;
+                    const float* g = geo_params;
+
+                    float grad_x =
+                        (1 - y)*(1 - z)*(g[1] - g[0]) +
+                        (    y)*(1 - z)*(g[3] - g[2]) +
+                        (1 - y)*(    z)*(g[5] - g[4]) +
+                        (    y)*(    z)*(g[7] - g[6]);
+
+                    float grad_y =
+                        (1 - x)*(1 - z)*(g[2] - g[0]) +
+                        (    x)*(1 - z)*(g[3] - g[1]) +
+                        (1 - x)*(    z)*(g[6] - g[4]) +
+                        (    x)*(    z)*(g[7] - g[5]);
+
+                    float grad_z =
+                        (1 - x)*(1 - y)*(g[4] - g[0]) +
+                        (    x)*(1 - y)*(g[5] - g[1]) +
+                        (1 - x)*(    y)*(g[6] - g[2]) +
+                        (    x)*(    y)*(g[7] - g[3]);
+
+                    float3 grad = make_float3(grad_x, grad_y, grad_z);
+                    float r = safe_rnorm(grad);
+                    N = grad * r;
+                    has_norm = true;
+                }
+                if(density_mode != SDF_MODE || !has_norm)
+                {
                 const float lin_nx = (
                     (geo_params[0b100] + geo_params[0b101] + geo_params[0b110] + geo_params[0b111]) -
                     (geo_params[0b000] + geo_params[0b001] + geo_params[0b010] + geo_params[0b011]));
@@ -337,6 +412,7 @@ renderCUDA(
                 const float3 lin_n = make_float3(lin_nx, lin_ny, lin_nz);
                 const float r_lin = safe_rnorm(lin_n);
                 N = N + pt_w * r_lin * lin_n;
+                }
             }
 
             T *= (1.f - alpha);
@@ -410,6 +486,8 @@ renderCUDA(
         {
             out_depth[pix_id] = D * rd_norm_inv;
             out_depth[H * W * 2 + pix_id] = D_med * rd_norm_inv;
+            if (density_mode == SDF_MODE && has_sdf0)
+                out_depth[H * W * 3 + pix_id] = sdf0_t * rd_norm_inv;
         }
         if (need_distortion)
         {
@@ -421,78 +499,85 @@ renderCUDA(
             out_normal[1 * H * W + pix_id] = N.y;
             out_normal[2 * H * W + pix_id] = N.z;
         }
+        if (density_mode == SDF_MODE && has_sdf0)
+            out_sdf0[pix_id] = sdf0_t;  // ray 방향으로의 거리
+        else
+            out_sdf0[pix_id] = -1.f;
         atomicMax(tile_last + tile_id, range.x + last_contributor);
     }
+    
 }
 
 
 #ifndef FwRendFunc
 // Dirty trick. The argument name must be aligned with FORWARD::render.
-#define FwRendFunc(...) \
+#define FwRendFunc(n_samp, density_mode) \
     ( \
         (need_feat && need_depth && need_distortion && need_normal && track_max_w) ?\
-            renderCUDA<true, true, true, true, true, __VA_ARGS__> :\
+            renderCUDA<true, true, true, true, true, n_samp, density_mode> :\
         (need_feat && need_depth && need_distortion && need_normal && !track_max_w) ?\
-            renderCUDA<true, true, true, true, false, __VA_ARGS__> :\
+            renderCUDA<true, true, true, true, false, n_samp, density_mode> :\
         (need_feat && need_depth && need_distortion && !need_normal && track_max_w) ?\
-            renderCUDA<true, true, true, false, true, __VA_ARGS__> :\
+            renderCUDA<true, true, true, false, true, n_samp, density_mode> :\
         (need_feat && need_depth && need_distortion && !need_normal && !track_max_w) ?\
-            renderCUDA<true, true, true, false, false, __VA_ARGS__> :\
+            renderCUDA<true, true, true, false, false, n_samp, density_mode> :\
         (need_feat && need_depth && !need_distortion && need_normal && track_max_w) ?\
-            renderCUDA<true, true, false, true, true, __VA_ARGS__> :\
+            renderCUDA<true, true, false, true, true, n_samp, density_mode> :\
         (need_feat && need_depth && !need_distortion && need_normal && !track_max_w) ?\
-            renderCUDA<true, true, false, true, false, __VA_ARGS__> :\
+            renderCUDA<true, true, false, true, false, n_samp, density_mode> :\
         (need_feat && need_depth && !need_distortion && !need_normal && track_max_w) ?\
-            renderCUDA<true, true, false, false, true, __VA_ARGS__> :\
+            renderCUDA<true, true, false, false, true, n_samp, density_mode> :\
         (need_feat && need_depth && !need_distortion && !need_normal && !track_max_w) ?\
-            renderCUDA<true, true, false, false, false, __VA_ARGS__> :\
+            renderCUDA<true, true, false, false, false, n_samp, density_mode> :\
         (need_feat && !need_depth && need_distortion && need_normal && track_max_w) ?\
-            renderCUDA<true, false, true, true, true, __VA_ARGS__> :\
+            renderCUDA<true, false, true, true, true, n_samp, density_mode> :\
+        (need_feat && !need_depth && need_distortion && need_normal && track_max_w) ?\
+            renderCUDA<true, false, true, true, true, n_samp, density_mode> :\
         (need_feat && !need_depth && need_distortion && need_normal && !track_max_w) ?\
-            renderCUDA<true, false, true, true, false, __VA_ARGS__> :\
+            renderCUDA<true, false, true, true, false, n_samp, density_mode> :\
         (need_feat && !need_depth && need_distortion && !need_normal && track_max_w) ?\
-            renderCUDA<true, false, true, false, true, __VA_ARGS__> :\
+            renderCUDA<true, false, true, false, true, n_samp, density_mode> :\
         (need_feat && !need_depth && need_distortion && !need_normal && !track_max_w) ?\
-            renderCUDA<true, false, true, false, false, __VA_ARGS__> :\
+            renderCUDA<true, false, true, false, false, n_samp, density_mode> :\
         (need_feat && !need_depth && !need_distortion && need_normal && track_max_w) ?\
-            renderCUDA<true, false, false, true, true, __VA_ARGS__> :\
+            renderCUDA<true, false, false, true, true, n_samp, density_mode> :\
         (need_feat && !need_depth && !need_distortion && need_normal && !track_max_w) ?\
-            renderCUDA<true, false, false, true, false, __VA_ARGS__> :\
+            renderCUDA<true, false, false, true, false, n_samp, density_mode> :\
         (need_feat && !need_depth && !need_distortion && !need_normal && track_max_w) ?\
-            renderCUDA<true, false, false, false, true, __VA_ARGS__> :\
+            renderCUDA<true, false, false, false, true, n_samp, density_mode> :\
         (need_feat && !need_depth && !need_distortion && !need_normal && !track_max_w) ?\
-            renderCUDA<true, false, false, false, false, __VA_ARGS__> :\
+            renderCUDA<true, false, false, false, false, n_samp, density_mode> :\
         (!need_feat && need_depth && need_distortion && need_normal && track_max_w) ?\
-            renderCUDA<false, true, true, true, true, __VA_ARGS__> :\
+            renderCUDA<false, true, true, true, true, n_samp, density_mode> :\
         (!need_feat && need_depth && need_distortion && need_normal && !track_max_w) ?\
-            renderCUDA<false, true, true, true, false, __VA_ARGS__> :\
+            renderCUDA<false, true, true, true, false, n_samp, density_mode> :\
         (!need_feat && need_depth && need_distortion && !need_normal && track_max_w) ?\
-            renderCUDA<false, true, true, false, true, __VA_ARGS__> :\
+            renderCUDA<false, true, true, false, true, n_samp, density_mode> :\
         (!need_feat && need_depth && need_distortion && !need_normal && !track_max_w) ?\
-            renderCUDA<false, true, true, false, false, __VA_ARGS__> :\
+            renderCUDA<false, true, true, false, false, n_samp, density_mode> :\
         (!need_feat && need_depth && !need_distortion && need_normal && track_max_w) ?\
-            renderCUDA<false, true, false, true, true, __VA_ARGS__> :\
+            renderCUDA<false, true, false, true, true, n_samp, density_mode> :\
         (!need_feat && need_depth && !need_distortion && need_normal && !track_max_w) ?\
-            renderCUDA<false, true, false, true, false, __VA_ARGS__> :\
+            renderCUDA<false, true, false, true, false, n_samp, density_mode> :\
         (!need_feat && need_depth && !need_distortion && !need_normal && track_max_w) ?\
-            renderCUDA<false, true, false, false, true, __VA_ARGS__> :\
+            renderCUDA<false, true, false, false, true, n_samp, density_mode> :\
         (!need_feat && need_depth && !need_distortion && !need_normal && !track_max_w) ?\
-            renderCUDA<false, true, false, false, false, __VA_ARGS__> :\
+            renderCUDA<false, true, false, false, false, n_samp, density_mode> :\
         (!need_feat && !need_depth && need_distortion && need_normal && track_max_w) ?\
-            renderCUDA<false, false, true, true, true, __VA_ARGS__> :\
+            renderCUDA<false, false, true, true, true, n_samp, density_mode> :\
         (!need_feat && !need_depth && need_distortion && need_normal && !track_max_w) ?\
-            renderCUDA<false, false, true, true, false, __VA_ARGS__> :\
+            renderCUDA<false, false, true, true, false, n_samp, density_mode> :\
         (!need_feat && !need_depth && need_distortion && !need_normal && track_max_w) ?\
-            renderCUDA<false, false, true, false, true, __VA_ARGS__> :\
+            renderCUDA<false, false, true, false, true, n_samp, density_mode> :\
         (!need_feat && !need_depth && need_distortion && !need_normal && !track_max_w) ?\
-            renderCUDA<false, false, true, false, false, __VA_ARGS__> :\
+            renderCUDA<false, false, true, false, false, n_samp, density_mode> :\
         (!need_feat && !need_depth && !need_distortion && need_normal && track_max_w) ?\
-            renderCUDA<false, false, false, true, true, __VA_ARGS__> :\
+            renderCUDA<false, false, false, true, true, n_samp, density_mode> :\
         (!need_feat && !need_depth && !need_distortion && need_normal && !track_max_w) ?\
-            renderCUDA<false, false, false, true, false, __VA_ARGS__> :\
+            renderCUDA<false, false, false, true, false, n_samp, density_mode> :\
         (!need_feat && !need_depth && !need_distortion && !need_normal && track_max_w) ?\
-            renderCUDA<false, false, false, false, true, __VA_ARGS__> :\
-            renderCUDA<false, false, false, false, false, __VA_ARGS__> \
+            renderCUDA<false, false, false, false, true, n_samp, density_mode> :\
+            renderCUDA<false, false, false, false, false, n_samp, density_mode> \
     )
 #endif
 
@@ -528,21 +613,29 @@ void render(
     float* out_normal,
     float* out_T,
     float* max_w,
+    float* out_sdf0,
 
     const int feat_dim,
     const float* feats,
-    float* out_feat)
+    float* out_feat,
+    const float* s_val)
 {
     const bool need_feat = (feat_dim > 0);
     const bool track_max_w = (max_w != nullptr);
 
     // The density_mode now is always EXP_LINEAR_11_MODE
     const auto kernel_func =
-        (vox_geo_mode == VOX_TRIINTERP1_MODE) ?
-            FwRendFunc(1) :
-        (vox_geo_mode == VOX_TRIINTERP3_MODE) ?
-            FwRendFunc(3) :
-            FwRendFunc(2) ;
+    (density_mode == DENSITY_EXP_LINEAR_11) ?
+        (
+            (vox_geo_mode == VOX_TRIINTERP1_MODE) ?
+                FwRendFunc(1, DENSITY_EXP_LINEAR_11) :
+            (vox_geo_mode == VOX_TRIINTERP3_MODE) ?
+                FwRendFunc(3, DENSITY_EXP_LINEAR_11) :
+                FwRendFunc(2, DENSITY_EXP_LINEAR_11)
+        ) :
+    (density_mode == DENSITY_SDF) ?
+        FwRendFunc(2, DENSITY_SDF):
+        FwRendFunc(2, DENSITY_SDF); //무조건 이렇게
 
     kernel_func <<<tile_grid, block>>> (
         ranges,
@@ -568,10 +661,12 @@ void render(
         out_normal,
         out_T,
         max_w,
+        out_sdf0,
 
         feat_dim,
         feats,
-        out_feat);
+        out_feat,
+        s_val);
 }
 
 
@@ -675,9 +770,9 @@ __global__ void identifyTileRanges(int L, uint64_t* vox_list_keys, uint2* ranges
     if (idx == L - 1)
         ranges[currtile].y = L;
 }
-
+// 5/15 여기를 바꿔야됨 ㅠㅜ
 // Mid-level C interface for the entire rasterization procedure.
-int rasterize_voxels_procedure(
+int rasterize_voxels_procedure( 
     char* geom_buffer,
     std::function<char* (size_t)> binningBuffer,
     std::function<char* (size_t)> imageBuffer,
@@ -706,12 +801,14 @@ int rasterize_voxels_procedure(
     float* out_normal,
     float* out_T,
     float* max_w,
+    float* out_sdf0,
 
     const int feat_dim,
     const float* feats,
     float* out_feat,
 
-    bool debug)
+    bool debug,
+    const float* s_val)
 {
     dim3 tile_grid((width + BLOCK_X - 1) / BLOCK_X, (height + BLOCK_Y - 1) / BLOCK_Y, 1);
     dim3 block(BLOCK_X, BLOCK_Y, 1);
@@ -785,7 +882,7 @@ int rasterize_voxels_procedure(
     }
 
     // Let each tile blend its range of voxels independently in parallel.
-    render(
+    render( //여기를 바꿔야 ㅠ
         tile_grid, block,
         imgState.ranges,
         binningState.vox_list,
@@ -815,10 +912,13 @@ int rasterize_voxels_procedure(
         out_normal,
         out_T,
         max_w,
+        out_sdf0,
 
         feat_dim,
         feats,
-        out_feat);
+        out_feat,
+    
+        s_val);
     CHECK_CUDA(debug);
 
     return num_rendered;
@@ -826,7 +926,7 @@ int rasterize_voxels_procedure(
 
 
 // Interface for python to run forward rasterization.
-std::tuple<int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
+std::tuple<int, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor>
 rasterize_voxels(
     const int vox_geo_mode,
     const int density_mode,
@@ -851,7 +951,8 @@ rasterize_voxels(
 
     const torch::Tensor& geomBuffer,
 
-    const bool debug)
+    const bool debug,
+    const torch::Tensor& s_val)
 {
     if (vox_centers.ndimension() != 2 || vox_centers.size(1) != 3)
         AT_ERROR("vox_centers must have dimensions (num_points, 3)");
@@ -871,11 +972,14 @@ rasterize_voxels(
     auto float_opts = vox_centers.options().dtype(torch::kFloat32);
 
     torch::Tensor out_color = torch::full({3, H, W}, 0.f, float_opts);
-    torch::Tensor out_depth = need_depth || need_distortion ? torch::full({3, H, W}, 0.f, float_opts) : torch::empty({0});
+    int depth_channel = (density_mode == DENSITY_SDF) ? 4 : 3;
+    torch::Tensor out_depth = need_depth || need_distortion
+        ? torch::full({depth_channel, H, W}, 0.f, float_opts)
+        : torch::empty({0});
     torch::Tensor out_normal = need_normal ? torch::full({3, H, W}, 0.f, float_opts) : torch::empty({0});
     torch::Tensor out_T = torch::full({1, H, W}, 0.f, float_opts);
     torch::Tensor max_w = track_max_w ? torch::full({P, 1}, 0.f, float_opts) : torch::empty({0});
-
+    torch::Tensor out_sdf0 = torch::full({H * W}, -1.f, float_opts);
     const int feat_dim = feats.size(1);
     torch::Tensor out_feat = torch::full({feat_dim, H, W}, 0.f, float_opts);
 
@@ -922,14 +1026,16 @@ rasterize_voxels(
             out_normal.contiguous().data_ptr<float>(),
             out_T.contiguous().data_ptr<float>(),
             max_w_pointer,
+            out_sdf0.contiguous().data_ptr<float>(),
 
             feat_dim,
             feats.contiguous().data_ptr<float>(),
             out_feat.contiguous().data_ptr<float>(),
 
-            debug);
+            debug,
+            s_val.contiguous().data_ptr<float>());
 
-    return std::make_tuple(rendered, binningBuffer, imgBuffer, out_color, out_depth, out_normal, out_T, max_w, out_feat);
+    return std::make_tuple(rendered, binningBuffer, imgBuffer, out_color, out_depth, out_normal, out_T, max_w, out_sdf0, out_feat);
 }
 
 }

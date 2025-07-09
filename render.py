@@ -55,8 +55,8 @@ def render_set(name, iteration, suffix, args, views, voxel_model):
 
     tr_render_opt = {
         'track_max_w': False,
-        'output_depth': not args.eval_fps,
-        'output_normal': not args.eval_fps,
+        'output_depth': False, #not args.eval_fps,
+        'output_normal': False, #not args.eval_fps,
         'output_T': not args.eval_fps,
     }
 
@@ -93,6 +93,7 @@ def render_set(name, iteration, suffix, args, views, voxel_model):
                 im_tensor2np(1-render_pkg['T'])[...,None].repeat(3, axis=-1)
             )
             # Depth
+            '''
             imageio.imwrite(
                 os.path.join(viz_path, fname + ".depth_med_viz.jpg"),
                 viz_tensordepth(render_pkg['depth'][2])
@@ -101,7 +102,8 @@ def render_set(name, iteration, suffix, args, views, voxel_model):
                 os.path.join(viz_path, fname + ".depth_viz.jpg"),
                 viz_tensordepth(render_pkg['depth'][0], 1-render_pkg['T'][0])
             )
-            # Normal
+            # Normal 
+            
             depth_med2normal = view.depth2normal(render_pkg['depth'][2])
             depth2normal = view.depth2normal(render_pkg['depth'][0])
             imageio.imwrite(
@@ -117,6 +119,7 @@ def render_set(name, iteration, suffix, args, views, voxel_model):
                 os.path.join(viz_path, fname + ".normal.jpg"),
                 im_tensor2np(render_normal * 0.5 + 0.5)
             )
+            '''
     torch.cuda.synchronize()
     eps_time = time.perf_counter() - eps_time
     peak_mem = torch.cuda.memory_stats()["allocated_bytes.all.peak"] / 1024 ** 3

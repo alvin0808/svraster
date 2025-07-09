@@ -22,6 +22,7 @@ VoxGeoModes = dict(
 
 DensityModes = dict(
     exp_linear_11=_C.EXP_LINEAR_11_MODE,
+    sdf=_C.SDF_MODE,
 )
 
 CamModes = dict(

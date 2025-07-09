@@ -72,7 +72,7 @@ class SVAdaptive:
         if self.active_sh_degree < self.max_sh_degree:
             self.active_sh_degree += 1
 
-    @torch.no_grad()
+    @torch.no_grad() #PyTorch autograd 엔진을 꺼서 메모리 낭비 없이 연산만 수행하게 함.
     def compute_training_stat(self, camera_lst):
         '''
         Compute the following statistic of each voxel from the given cameras.
@@ -88,16 +88,18 @@ class SVAdaptive:
         min_samp_interval = torch.full([self.num_voxels, 1], 1e30, dtype=torch.float32, device="cuda")
         view_cnt = torch.zeros([self.num_voxels, 1], dtype=torch.float32, device="cuda")
         for camera in camera_lst:
+            #voxel 별로 blending weight를 계산하기 위해서 camera를 render에 넣어줌.
             max_w_i = self.render(camera, color_mode='dontcare', track_max_w=True)['max_w']
             max_w = torch.maximum(max_w, max_w_i)
-
+            #squeeze는 불필요한 차원을 없애주는 함수.
+            #argwhere는 조건에 맞는 인덱스를 반환하는 함수.
             vis_idx = (max_w_i > 0).squeeze().argwhere().squeeze()
             zdist = ((self.vox_center[vis_idx] - camera.position) * camera.lookat).sum(-1, keepdims=True)
             samp_interval = zdist * camera.pix_size
             min_samp_interval[vis_idx] = torch.minimum(min_samp_interval[vis_idx], samp_interval)
 
             view_cnt[vis_idx] += 1
-
+        #근데 사실 이 방법대로 하면 가운데 픽셀들은 samp_interval이 과대평가됨.
         stat_pkg = {
             'max_w': max_w,
             'min_samp_interval': min_samp_interval,

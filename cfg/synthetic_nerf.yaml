@@ -15,11 +15,11 @@ data:
   eval: True
 
 regularizer:
-  lambda_T_concen: 0.1
+  lambda_T_concen: 0.1 #0.1
 
 init:
-  sh_degree_init: 0
+  sh_degree_init: 1
 
 procedure:
-  subdivide_all_until: 1000  # Subdivide all at the first time
+  subdivide_all_until: 0  # 원래 1000Subdivide all at the first time
   subdivide_samp_thres: 0.5  # Enable smaller voxels

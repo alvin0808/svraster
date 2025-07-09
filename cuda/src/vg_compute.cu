@@ -8,7 +8,7 @@ distribution of this software and related documentation without an express
 license agreement from NVIDIA CORPORATION is strictly prohibited.
 *************************************************************************/
 
-#include "tv_compute.h"
+#include "vg_compute.h"
 #include "auxiliary.h"
 
 #include <cuda.h>
@@ -17,10 +17,10 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include <cooperative_groups.h>
 namespace cg = cooperative_groups;
 
-namespace TV_COMPUTE {
+namespace VG_COMPUTE {
 
 template <bool no_tv_s, bool tv_sparse>
-__global__ void total_variation_bw_cuda(
+__global__ void voxel_gradient_bw_cuda(
     const int N, const int C, const int NC,
     const float* __restrict__ grid_pts,
     const int64_t* __restrict__ vox_key,
@@ -54,20 +54,19 @@ __global__ void total_variation_bw_cuda(
     for (int i=0; i<8; ++i)
         vlst[i] = grid_pts[i_book[i] * C + iC];
 
-    
+    /*
     bool has_surface = false;
     float sign0 = (vlst[0] > 0.f);
     for (int i = 1; i < 8; ++i)
         has_surface |= ((vlst[i] > 0.f) != sign0);
-
-    float w = weight;
-    if (has_surface)
-        w *= 3.0f;
-
     
+    if (!has_surface)
+        return;
+    */
+    float w = weight;
     /*
     if (!no_tv_s)
-        w *= 0.01f * sqrtf(vox_size_inv[iN]);
+        w *= 0.01f * vox_size_inv[iN];
     */
     // Compute gradient wrt total variation loss
     /*
@@ -84,63 +83,7 @@ __global__ void total_variation_bw_cuda(
     #pragma unroll
     for (int i=0; i<8; ++i)
         dtv_dgrid_pts[i] = w * ((float)glst[i]);
-    */
-    
-    float edge_diff[12];
-    edge_diff[0] = vlst[0] - vlst[1]; // x-edge
-    edge_diff[1] = vlst[2] - vlst[3]; // x-edge
-    edge_diff[2] = vlst[4] - vlst[5]; // x-edge
-    edge_diff[3] = vlst[6] - vlst[7]; // x-edge
-
-    edge_diff[4] = vlst[0] - vlst[2]; // y-edge
-    edge_diff[5] = vlst[1] - vlst[3]; // y-edge
-    edge_diff[6] = vlst[4] - vlst[6]; // y-edge
-    edge_diff[7] = vlst[5] - vlst[7]; // y-edge
-
-    edge_diff[8]  = vlst[0] - vlst[4]; // z-edge
-    edge_diff[9]  = vlst[1] - vlst[5]; // z-edge
-    edge_diff[10] = vlst[2] - vlst[6]; // z-edge
-    edge_diff[11] = vlst[3] - vlst[7]; // z-edge
-    float mean_x = 0.25f * (edge_diff[0] + edge_diff[1] + edge_diff[2] + edge_diff[3]);
-    float mean_y = 0.25f * (edge_diff[4] + edge_diff[5] + edge_diff[6] + edge_diff[7]);
-    float mean_z = 0.25f * (edge_diff[8] + edge_diff[9] + edge_diff[10] + edge_diff[11]);
-    float grad_parallel[8] = {0.f};  // parallel loss에 대한 gradient 초기화
-
-    // x 방향 모서리
-    grad_parallel[0] += 2.0f * (edge_diff[0] - mean_x);
-    grad_parallel[1] -= 2.0f * (edge_diff[0] - mean_x);
-    grad_parallel[2] += 2.0f * (edge_diff[1] - mean_x);
-    grad_parallel[3] -= 2.0f * (edge_diff[1] - mean_x);
-    grad_parallel[4] += 2.0f * (edge_diff[2] - mean_x);
-    grad_parallel[5] -= 2.0f * (edge_diff[2] - mean_x);
-    grad_parallel[6] += 2.0f * (edge_diff[3] - mean_x);
-    grad_parallel[7] -= 2.0f * (edge_diff[3] - mean_x);
-
-    // y 방향 모서리
-    grad_parallel[0] += 2.0f * (edge_diff[4] - mean_y);
-    grad_parallel[2] -= 2.0f * (edge_diff[4] - mean_y);
-    grad_parallel[1] += 2.0f * (edge_diff[5] - mean_y);
-    grad_parallel[3] -= 2.0f * (edge_diff[5] - mean_y);
-    grad_parallel[4] += 2.0f * (edge_diff[6] - mean_y);
-    grad_parallel[6] -= 2.0f * (edge_diff[6] - mean_y);
-    grad_parallel[5] += 2.0f * (edge_diff[7] - mean_y);
-    grad_parallel[7] -= 2.0f * (edge_diff[7] - mean_y);
-
-    // z 방향 모서리
-    grad_parallel[0] += 2.0f * (edge_diff[8] - mean_z);
-    grad_parallel[4] -= 2.0f * (edge_diff[8] - mean_z);
-    grad_parallel[1] += 2.0f * (edge_diff[9] - mean_z);
-    grad_parallel[5] -= 2.0f * (edge_diff[9] - mean_z);
-    grad_parallel[2] += 2.0f * (edge_diff[10] - mean_z);
-    grad_parallel[6] -= 2.0f * (edge_diff[10] - mean_z);
-    grad_parallel[3] += 2.0f * (edge_diff[11] - mean_z);
-    grad_parallel[7] -= 2.0f * (edge_diff[11] - mean_z);
-    float dtv_dgrid_pts[8] = {0.f};
-    for (int i = 0; i < 8; ++i) {
-        dtv_dgrid_pts[i] += w * grad_parallel[i];
-    }
-    
-  /*
+*/  /*
     float dtv_dgrid_pts[8] = {0.f};
 
     #pragma unroll
@@ -150,7 +93,27 @@ __global__ void total_variation_bw_cuda(
         float dz = 0.5f * (vlst[i ^ 0b100] + vlst[i]) - vlst[i];  // z 방향 차이
         dtv_dgrid_pts[i] = w * (dx + dy + dz);
     }*/
+    float gx = (vlst[0b100] + vlst[0b101] + vlst[0b110] + vlst[0b111] -
+                vlst[0b000] - vlst[0b001] - vlst[0b010] - vlst[0b011]) * 0.25f;
+
+    float gy = (vlst[0b010] + vlst[0b011] + vlst[0b110] + vlst[0b111] -
+                vlst[0b000] - vlst[0b001] - vlst[0b100] - vlst[0b101]) * 0.25f;
+
+    float gz = (vlst[0b001] + vlst[0b011] + vlst[0b101] + vlst[0b111] -
+                vlst[0b000] - vlst[0b010] - vlst[0b100] - vlst[0b110]) * 0.25f;
+
+    float grad_norm = sqrtf(gx * gx + gy * gy + gz * gz + 1e-6f);
+    float diff = grad_norm*vox_size_inv[iN] - 1.0f;
+    float dtv_dgrid_pts[8] = {0.f};
     
+    for (int i = 0; i < 8; ++i) {
+        float dgi_dx = ((i & 0b100) ? +0.25f : -0.25f);
+        float dgi_dy = ((i & 0b010) ? +0.25f : -0.25f);
+        float dgi_dz = ((i & 0b001) ? +0.25f : -0.25f);
+
+        float dnorm_ds = (gx * dgi_dx + gy * dgi_dy + gz * dgi_dz) / grad_norm;
+        dtv_dgrid_pts[i] = 2.0f * w * diff * dnorm_ds;
+    }
     // Write back
     #pragma unroll
     for (int i=0; i<8; ++i)
@@ -159,7 +122,7 @@ __global__ void total_variation_bw_cuda(
 
 
 // Python interface to directly write the gradient of tv loss.
-void total_variation_bw(
+void voxel_gradient_bw(
     const torch::Tensor& grid_pts,
     const torch::Tensor& vox_key,
     const float weight,
@@ -173,10 +136,10 @@ void total_variation_bw(
     const int NC = N * C;
 
     auto tv_kernel =
-        (no_tv_s & tv_sparse) ? total_variation_bw_cuda<true, true>   :
-        (no_tv_s)             ? total_variation_bw_cuda<true, false>  :
-        (tv_sparse)           ? total_variation_bw_cuda<false, true>  :
-                                total_variation_bw_cuda<false, false> ;
+        (no_tv_s & tv_sparse) ? voxel_gradient_bw_cuda<true, true>   :
+        (no_tv_s)             ? voxel_gradient_bw_cuda<true, false>  :
+        (tv_sparse)           ? voxel_gradient_bw_cuda<false, true>  :
+                                voxel_gradient_bw_cuda<false, false> ;
 
     if (N > 0)
         tv_kernel <<<(NC + 255) / 256, 256>>> (

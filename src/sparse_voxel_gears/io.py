@@ -31,6 +31,7 @@ class SVInOut:
             '_geo_grid_pts': self._geo_grid_pts.data.contiguous(),
             '_sh0': self._sh0.data.contiguous(),
             '_shs': self._shs.data.contiguous(),
+            '_log_s': self._log_s.data.contiguous(),
         }
 
         if quantize:
@@ -70,6 +71,7 @@ class SVInOut:
         self._geo_grid_pts = state_dict['_geo_grid_pts'].cuda().requires_grad_()
         self._sh0 = state_dict['_sh0'].cuda().requires_grad_()
         self._shs = state_dict['_shs'].cuda().requires_grad_()
+        self._log_s = state_dict['_log_s'].cuda().requires_grad_()
 
         N = len(self.octpath)
         self._subdiv_p = torch.full([N, 1], 1.0, dtype=torch.float32, device="cuda").requires_grad_()

@@ -65,10 +65,10 @@ class SVProperties:
         # Lazy computation of inverse voxel sizes
         signature = self.signature
         need_recompute = not hasattr(self, '_vox_size_inv') or \
-                         self._vox_size_inv_signature != signature
+                         self._vox_size_log_signature != signature
         if need_recompute:
             self._vox_size_inv = 1 / self.vox_size
-            self._vox_size_inv_signature = signature
+            self._vox_size_log_signature = signature
         return self._vox_size_inv
 
     @property

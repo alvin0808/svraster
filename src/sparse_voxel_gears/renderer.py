@@ -66,7 +66,7 @@ class SVRenderer:
             color_mode = "sh"
 
         if color_mode == "sh":
-            rgbs = svraster_cuda.renderer.SH_eval.apply(
+            rgbs = svraster_cuda.renderer.SH_eval.apply( #view dependent color
                 active_sh_degree,
                 idx,
                 self.vox_center,
@@ -88,9 +88,10 @@ class SVRenderer:
             raise NotImplementedError
 
         vox_params = {
-            'geos': geos,
-            'rgbs': rgbs,
-            'subdiv_p': self._subdiv_p,  # Dummy param to record gradients
+            'geos': geos, #8 corners of each voxel [N,8,3]
+            'rgbs': rgbs, # RGB color of each voxel [N,3]
+            'subdiv_p': self._subdiv_p,  # Dummy param to record gradients [N, 1]
+            'log_s': self._log_s, #숫자 하나
         }
         return vox_params
 
@@ -98,7 +99,7 @@ class SVRenderer:
             self,
             camera,
             color_mode=None,
-            track_max_w=False,
+            track_max_w=False, # Track max weight for each voxel
             ss=None,
             output_depth=False,
             output_normal=False,

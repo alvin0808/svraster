@@ -26,6 +26,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #define VOX_TRIINTERP3_MODE 3
 
 #define EXP_LINEAR_11_MODE 0
+#define SDF_MODE 1
 
 #define STEP_SZ_SCALE 100.f
 

@@ -18,6 +18,9 @@ def exp_linear_10(x):
 def exp_linear_11(x):
     return torch.where(x > 1.1, x, torch.exp(0.909090909091 * x - 0.904689820196))
 
+def sdf(x):
+    return torch.where(x > 1.1, x, torch.exp(0.909090909091 * x - 0.904689820196))
+
 def exp_linear_20(x):
     return torch.where(x > 2.0, x, torch.exp(0.5 * x - 0.30685281944))
 
@@ -28,6 +31,9 @@ def exp_linear_10_inverse(y):
     return torch.where(y > 1, y, torch.log(y) + 1)
 
 def exp_linear_11_inverse(y):
+    return torch.where(y > 1.1, y, (torch.log(y) + 0.904689820196) / 0.909090909091)
+
+def sdf_inverse(y):
     return torch.where(y > 1.1, y, (torch.log(y) + 0.904689820196) / 0.909090909091)
 
 def exp_linear_20_inverse(x):

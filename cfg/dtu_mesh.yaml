@@ -13,7 +13,7 @@ data:
   res_downscale: 2.0
 
 model:
-  outside_level: 1
+  outside_level: 0
   vox_geo_mode: triinterp3
   black_background: True
 
@@ -21,8 +21,8 @@ optimizer:
   geo_lr: 0.05
 
 regularizer:
-  lambda_T_concen: 0.01
-  lambda_R_concen: 0.1
+  lambda_T_concen: 0.01 #0.01
+  lambda_R_concen: 0.1 #0.1
   lambda_normal_dmean: 0.001
   lambda_normal_dmed: 0.001
 

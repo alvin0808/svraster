@@ -241,11 +241,11 @@ def gen_octpath_dense(outside_level, n_level_inside):
     if n_level_inside > 1:
         dense_octpath = torch.arange((2**(n_level_inside-1)) ** 3, dtype=torch.int64, device="cuda")
         dense_octpath = dense_octpath << (3 * (MAX_NUM_LEVELS-(outside_level+1)-(n_level_inside-1)))
-        octpath = (octpath.view(8,1) | dense_octpath)
+        octpath = (octpath.view(8,1) | dense_octpath) #[8, 1]  |  [64^3]  →  [8, 64^3]
 
     octpath = octpath.reshape(-1, 1)
     octlevel = torch.full_like(octpath, outside_level + n_level_inside, dtype=torch.int8)
-    return octpath, octlevel
+    return octpath, octlevel #5/14일 이해완
 
 
 def gen_octpath_shell(shell_level, n_level_inside):
