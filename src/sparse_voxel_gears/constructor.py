@@ -107,12 +107,12 @@ class SVConstructor:
         # num_grid_pts = 8 * len(self.octpath) = len(self.grid_pts_key)
 
         self.active_sh_degree = min(cfg_init.sh_degree_init, self.max_sh_degree)
-        mode = 1
+        mode = 0
         if cfg_mode == "exp_linear_11":
-            torch.full([self.num_grid_pts, 1], cfg_init.geo_init, dtype=torch.float32, device="cuda")
+            _geo_grid_pts = torch.full([self.num_grid_pts, 1], cfg_init.geo_init, dtype=torch.float32, device="cuda")
         elif mode ==1 : 
             _geo_grid_pts = (
-                torch.empty([self.num_grid_pts, 1], device="cuda").uniform_(0.7, 0.8)
+                torch.empty([self.num_grid_pts, 1], device="cuda").uniform_(0.70, 0.8)
             )
         else:
             # scene 중심에서의 거리 기반 SDF 초기화
@@ -156,12 +156,8 @@ class SVConstructor:
         self.bg_color = torch.tensor(
             [1, 1, 1] if self.white_background else [0, 0, 0],
             dtype=torch.float32, device="cuda")
-        self.update_valid_gradient_table(cfg_mode)
-    def update_valid_gradient_table(self, cfg_mode):
-        if(cfg_mode == "exp_linear_11"):
-            return
-        
-
+        self.grid_mask, self.grid_keys, self.grid2voxel = octree_utils.update_valid_gradient_table(cfg_mode, self.vox_center, self.vox_size, self.scene_center, self.inside_extent, cfg_init.init_n_level)
+    
 
 
 #################################################

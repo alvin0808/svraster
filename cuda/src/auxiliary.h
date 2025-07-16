@@ -329,6 +329,101 @@ __forceinline__ __device__ float tri_interp_weight(const float3 qt, float interp
     interp_w[5] = wx[1] * wy[0] * wz[1];
     interp_w[6] = wx[1] * wy[1] * wz[0];
     interp_w[7] = wx[1] * wy[1] * wz[1];
+    return interp_w[0] + interp_w[1] + interp_w[2] + interp_w[3] +
+           interp_w[4] + interp_w[5] + interp_w[6] + interp_w[7];
+}
+__forceinline__ __device__ int flatten_grid_key(int x, int y, int z, int res) {
+    return x + y * res + z * res * res;
+}
+__forceinline__ __device__ bool check_valid_neighbors(
+    int x, int y, int z, int grid_res, const bool* __restrict__ grid_mask
+) {
+    if (x <= 0 || x >= grid_res - 1 ||
+        y <= 0 || y >= grid_res - 1 ||
+        z <= 0 || z >= grid_res - 1)
+        return false;
+    return grid_mask[flatten_grid_key(x+1, y, z, grid_res)] &&
+           grid_mask[flatten_grid_key(x-1, y, z, grid_res)] &&
+           grid_mask[flatten_grid_key(x, y+1, z, grid_res)] &&
+           grid_mask[flatten_grid_key(x, y-1, z, grid_res)] &&
+           grid_mask[flatten_grid_key(x, y, z+1, grid_res)] &&
+           grid_mask[flatten_grid_key(x, y, z-1, grid_res)];
+}
+__forceinline__ __device__ int binary_search(const int32_t* keys, int size, int key) {
+    int l = 0, r = size - 1;
+    while (l <= r) {
+        int m = (l + r) / 2;
+        if (keys[m] == key) return m;
+        if (keys[m] < key) l = m + 1;
+        else r = m - 1;
+    }
+    return -1;
+}
+
+
+__forceinline__ __device__ float3 operator/(const float3& a, const float s) {
+    return make_float3(a.x / s, a.y / s, a.z / s);
+}
+__forceinline__ __device__ float interpolate_sdf_and_grad(
+    int M, int gx, int gy, int gz,
+    const int32_t* grid_keys, const int32_t* grid2voxel,
+    const float* voxel_coords, const float* voxel_sizes,
+    const int64_t* vox_key, const float* grid_pts, int grid_res, int num_voxels, int grid_pts_size,
+    float* weights_out, int& voxel_id_out
+) {
+    int gk = flatten_grid_key(gx, gy, gz, grid_res);
+    int idx = binary_search(grid_keys,M , gk);
+    if (idx == -1) {
+        printf("Error: grid key %d not found in grid_keys.\n", gk);
+        return 0.0f;
+    }
+    voxel_id_out = grid2voxel[idx];
+
+    float3 pt = make_float3(gx + 0.5f, gy + 0.5f, gz + 0.5f);
+
+    float3 base = make_float3(
+        voxel_coords[voxel_id_out * 3 + 0],
+        voxel_coords[voxel_id_out * 3 + 1],
+        voxel_coords[voxel_id_out * 3 + 2]
+    );
+    //if(grid_res==128) printf("Voxel ID: %d, Base: (%f, %f, %f)\nVoxel ID: %d, Point: (%f, %f, %f)\n", voxel_id_out, base.x, base.y, base.z, voxel_id_out, pt.x, pt.y, pt.z);
+    
+    if (voxel_id_out < 0 || voxel_id_out >= num_voxels) {
+        printf("Error: voxel_id_out %d is out of bounds.\n", voxel_id_out);
+        return 0.0f;
+    }
+    float size = voxel_sizes[voxel_id_out];
+    float3 local_q = (pt - base) / size;
+    tri_interp_weight(local_q, weights_out);
+
+    float sdf = 0.f;
+    for (int i = 0; i < 8; ++i) {
+        if(weights_out[i]>1 || weights_out[i]<0) {
+            printf("Error: weight[%d] = %f is out of bounds [0, 1].\n", i, weights_out[i]);
+            return 0.0f;
+        }
+        int pt_id = vox_key[voxel_id_out * 8 + i];
+        if (pt_id < 0 || pt_id >= grid_pts_size) {
+            printf("Error: pt_id %d is out of bounds.\n", pt_id);
+            return 0.0f;
+        }
+        sdf += grid_pts[pt_id] * weights_out[i];
+    }
+    return sdf;
+}
+
+__forceinline__ __device__ void accumulate_grad(
+    int voxel_id, int num_voxels, const int64_t* vox_key,
+    const float* w, float dL_dsdf, float* grid_pts_grad
+) {
+    if (voxel_id < 0 || voxel_id >= num_voxels) {
+        printf("Error: voxel_id %d is out of bounds.\n", voxel_id);
+        return;
+    }
+    for (int i = 0; i < 8; ++i) {
+        int pt_id = vox_key[voxel_id * 8 + i];
+        atomicAdd(grid_pts_grad + pt_id, dL_dsdf * w[i]);
+    }
 }
 
 // Debugging helper.

@@ -102,7 +102,7 @@ __global__ void voxel_gradient_bw_cuda(
     float gz = (vlst[0b001] + vlst[0b011] + vlst[0b101] + vlst[0b111] -
                 vlst[0b000] - vlst[0b010] - vlst[0b100] - vlst[0b110]) * 0.25f;
 
-    float grad_norm = sqrtf(gx * gx + gy * gy + gz * gz + 1e-6f);
+    float grad_norm = sqrtf(gx * gx + gy * gy + gz * gz + 1e-10f);
     float diff = grad_norm*vox_size_inv[iN] - 1.0f;
     float dtv_dgrid_pts[8] = {0.f};
     
@@ -111,7 +111,7 @@ __global__ void voxel_gradient_bw_cuda(
         float dgi_dy = ((i & 0b010) ? +0.25f : -0.25f);
         float dgi_dz = ((i & 0b001) ? +0.25f : -0.25f);
 
-        float dnorm_ds = (gx * dgi_dx + gy * dgi_dy + gz * dgi_dz) / grad_norm;
+        float dnorm_ds = (gx * dgi_dx + gy * dgi_dy + gz * dgi_dz) *vox_size_inv[iN] / grad_norm;
         dtv_dgrid_pts[i] = 2.0f * w * diff * dnorm_ds;
     }
     // Write back

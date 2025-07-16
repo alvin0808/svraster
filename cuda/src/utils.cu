@@ -187,6 +187,64 @@ __global__ void octpath_2_ijk_cuda (
     ijk[idx * 3 + 1] = j;
     ijk[idx * 3 + 2] = k;
 }
+__global__ void valid_gradient_table_kernel(
+    const float* vox_center,
+    const float* vox_size,
+    const float* scene_center,
+    float inside_extent,
+    int grid_res,
+    int N,
+    bool* grid_mask,
+    int* grid_keys,
+    int* grid2voxel,
+    int* counter)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= N) return;
+
+    const float* center = &vox_center[i * 3];
+    float size = vox_size[i];
+
+    float inside_min[3], inside_max[3];
+    for (int d = 0; d < 3; ++d) {
+        inside_min[d] = scene_center[d] - 0.5f * inside_extent;
+        inside_max[d] = scene_center[d] + 0.5f * inside_extent;
+    }
+
+    bool inside = true;
+    for (int d = 0; d < 3; ++d) {
+        if (center[d] < inside_min[d] || center[d] > inside_max[d]) {
+            inside = false;
+        }
+    }
+    if (!inside) return;
+
+    float min_corner[3], max_corner[3];
+    for (int d = 0; d < 3; ++d) {
+        min_corner[d] = center[d] - 0.5f * size;
+        max_corner[d] = center[d] + 0.5f * size;
+    }
+
+    int x0 = int((min_corner[0] - inside_min[0]) / (inside_max[0] - inside_min[0]) * grid_res);
+    int y0 = int((min_corner[1] - inside_min[1]) / (inside_max[1] - inside_min[1]) * grid_res);
+    int z0 = int((min_corner[2] - inside_min[2]) / (inside_max[2] - inside_min[2]) * grid_res);
+    int x1 = int((max_corner[0] - inside_min[0]) / (inside_max[0] - inside_min[0]) * grid_res);
+    int y1 = int((max_corner[1] - inside_min[1]) / (inside_max[1] - inside_min[1]) * grid_res);
+    int z1 = int((max_corner[2] - inside_min[2]) / (inside_max[2] - inside_min[2]) * grid_res);
+    //printf("Voxel %d: (%d, %d, %d) to (%d, %d, %d)\n", i, x0, y0, z0, x1, y1, z1);
+    for (int xi = x0; xi < x1; ++xi) {
+        for (int yi = y0; yi < y1; ++yi) {
+            for (int zi = z0; zi < z1; ++zi) {
+                int flat_idx = xi + grid_res * (yi + grid_res * zi);
+                grid_mask[flat_idx] = true;
+
+                int slot = atomicAdd(counter, 1);
+                grid_keys[slot] = flat_idx;
+                grid2voxel[slot] = i;
+            }
+        }
+    }
+}
 
 // Interface for python
 torch::Tensor is_in_cone(
@@ -295,6 +353,51 @@ torch::Tensor octpath_2_ijk(const torch::Tensor& octpath, const torch::Tensor& o
             ijk.contiguous().data_ptr<int64_t>());
 
     return ijk;
+}
+std::tuple<at::Tensor, at::Tensor, at::Tensor> valid_gradient_table(
+    const at::Tensor& vox_center,
+    const at::Tensor& vox_size,
+    const at::Tensor& scene_center,
+    float inside_extent,
+    int grid_res_pow2)
+{
+    
+
+    //at::cuda::CUDAGuard device_guard(vox_center.device());
+
+    int N = vox_center.size(0);
+    int grid_res = 1 << grid_res_pow2;
+    int flat_size = grid_res * grid_res * grid_res;
+
+    // Outputs
+    auto grid_mask = at::zeros({flat_size}, vox_center.options().dtype(at::kBool));
+    auto grid_keys = at::empty({N * 64}, vox_center.options().dtype(at::kInt)); // conservative buffer
+    auto grid2voxel = at::empty({N * 64}, vox_center.options().dtype(at::kInt));
+    auto counter = at::zeros({1}, vox_center.options().dtype(at::kInt)); // atomic counter
+
+    // Launch CUDA kernel
+    const int threads = 128;
+    const int blocks = (N + threads - 1) / threads;
+
+    valid_gradient_table_kernel<<<blocks, threads>>>(
+        vox_center.contiguous().data_ptr<float>(),
+        vox_size.contiguous().data_ptr<float>(),
+        scene_center.contiguous().data_ptr<float>(),
+        inside_extent,
+        grid_res,
+        N,
+        grid_mask.data_ptr<bool>(),
+        grid_keys.data_ptr<int>(),
+        grid2voxel.data_ptr<int>(),
+        counter.data_ptr<int>()
+    );
+    int valid_count = counter.cpu().item<int>();
+    printf("Valid grid count: %d\n", valid_count);
+    return {
+        grid_mask,
+        grid_keys.slice(0, 0, valid_count),
+        grid2voxel.slice(0, 0, valid_count)
+    };
 }
 
 }

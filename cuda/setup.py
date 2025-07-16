@@ -26,6 +26,7 @@ def build_setup():
                     "src/sh_compute.cu",
                     "src/tv_compute.cu",
                     "src/vg_compute.cu",
+                    "src/ge_compute.cu",
                     "src/utils.cu",
                     "src/adam_step.cu",
                     "binding.cpp"

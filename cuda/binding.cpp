@@ -17,6 +17,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include "src/sh_compute.h"
 #include "src/vg_compute.h"
 #include "src/tv_compute.h"
+#include "src/ge_compute.h"
 #include "src/geo_params_gather.h"
 #include "src/utils.h"
 #include "src/adam_step.h"
@@ -39,6 +40,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
     m.def("total_variation_bw", &TV_COMPUTE::total_variation_bw);
     m.def("voxel_gradient_bw", &VG_COMPUTE::voxel_gradient_bw);
+    m.def("grid_eikonal_bw", &GE_COMPUTE::grid_eikonal_bw);
 
     m.def("is_in_cone", &UTILS::is_in_cone);
     m.def("compute_rd", &UTILS::compute_rd);
@@ -46,6 +48,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("voxel_order_rank", &UTILS::voxel_order_rank);
     m.def("ijk_2_octpath", &UTILS::ijk_2_octpath);
     m.def("octpath_2_ijk", &UTILS::octpath_2_ijk);
+    m.def("valid_gradient_table", &UTILS::valid_gradient_table);
 
     m.def("unbiased_adam_step", &ADAM_STEP::unbiased_adam_step);
     m.def("biased_adam_step", &ADAM_STEP::biased_adam_step);

@@ -141,14 +141,17 @@ cfg.regularizer = CfgNode(dict(
     vg_decay_mult = 1.0,
     vg_sparse = False,
 
+    lambda_ge_density = 1e-8,
+    ge_from = 0,
+    ge_until = 20000,
+    ge_decay_every = 1000,
+    ge_decay_mult = 1.0,
+    ge_sparse = False,
+
     # Data augmentation
     ss_aug_max = 1.5,
     rand_bg = False,
 
-    # ekonical loss
-    lambda_eikonal = 0.0,
-    eikonal_num_samples = 1000,
-    eikonal_from = 0,
 ))
 
 cfg.init = CfgNode(dict(

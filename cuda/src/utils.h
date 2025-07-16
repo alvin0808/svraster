@@ -42,6 +42,13 @@ torch::Tensor ijk_2_octpath(const torch::Tensor& ijk, const torch::Tensor& octle
 
 torch::Tensor octpath_2_ijk(const torch::Tensor& octpath, const torch::Tensor& octlevel);
 
-}
 
+std::tuple<at::Tensor, at::Tensor, at::Tensor> valid_gradient_table(
+    const at::Tensor& vox_center,      // [N, 3], float32
+    const at::Tensor& vox_size,        // [N, 1], float32
+    const at::Tensor& scene_center,    // [3], float32
+    float inside_extent,        // scalar
+    int grid_res_pow2           // int, we will do 2 ** grid_res_pow2 in C++
+);
+}
 #endif

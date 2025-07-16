@@ -37,7 +37,7 @@ from src.utils.image_utils import im_tensor2np, viz_tensordepth
 from src.utils.bounding_utils import decide_main_bounding
 from src.utils import mono_utils
 from src.utils import loss_utils
-
+from src.utils import octree_utils
 from src.dataloader.data_pack import DataPack, compute_iter_idx
 from src.sparse_voxel_model import SparseVoxelModel
 
@@ -80,7 +80,7 @@ def training(args):
 
     # Init voxel model
     voxel_model = SparseVoxelModel(cfg.model) #본격적 으로 SparseVoxelModel을 생성하는 부분 
-
+    
     if args.load_iteration: #중간저장된거 로드하는 경우
         loaded_iter = voxel_model.load_iteration(args.load_iteration)
     else:
@@ -158,6 +158,28 @@ def training(args):
     ema_psnr_for_log = 0.0 #use for logging
     iter_rng = range(first_iter, cfg.procedure.n_iter+1)
     progress_bar = tqdm(iter_rng, desc="Training")   #10 iterations마다 processbar update
+    #parameters for eikonal loss
+    vox_size_min_inv = 1.0 / voxel_model.vox_size.min().item() #복셀의 최소 크기
+    print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}") #복셀의 최소 크기
+    max_voxel_level = voxel_model.octlevel.max().item()-cfg.model.outside_level
+    grid_voxel_coord = ((voxel_model.vox_center- voxel_model.vox_size * 0.5)-(voxel_model.scene_center-voxel_model.inside_extent*0.5))/voxel_model.inside_extent*(2**max_voxel_level) #복셀의 좌표
+    grid_voxel_size = (voxel_model.vox_size / voxel_model.inside_extent) * (2**max_voxel_level) #복셀의 크기
+    print(f"grid_voxel_coord = {grid_voxel_coord}") #복셀의 좌표
+    print(f"grid_voxel_size = {grid_voxel_size}") #복셀의 크기
+    '''
+    rand_idx = torch.randperm(len(voxel_model.grid_keys), device='cuda')[:10]
+    for i in range(10):
+        key = voxel_model.grid_keys[rand_idx[i]]
+        grid_res = 2**max_voxel_level
+        x= key %grid_res
+        y= (key // grid_res) % grid_res
+        z= key // (grid_res * grid_res)
+        print(f"grid_keys[{rand_idx[i]}] = {key} => ({x}, {y}, {z})") #grid_keys의 좌표 출력
+        voxel_coord = grid_voxel_coord[voxel_model.grid2voxel[rand_idx[i]]] #grid_voxel_coord에서 grid2voxel로 복셀 좌표를 얻음
+        print(f"grid_voxel_coord[{rand_idx[i]}] = {voxel_coord}") #복셀 좌표 출력
+        voxel_size = grid_voxel_size[voxel_model.grid2voxel[rand_idx[i]]] #grid_voxel_size에서 grid2voxel로 복셀 크기를 얻음
+        print(f"grid_voxel_size[{rand_idx[i]}] = {voxel_size}") #복
+    '''
     for iteration in iter_rng:
 
         # Start processing time tracking of this iteration
@@ -289,10 +311,28 @@ def training(args):
                 tv_sparse=cfg.regularizer.vg_sparse,
                 grid_pts_grad=voxel_model._geo_grid_pts.grad)
         
-
+        grid_eikonal_interval = iteration >= cfg.regularizer.ge_from and iteration <= cfg.regularizer.ge_until
+        if cfg.regularizer.lambda_ge_density and grid_eikonal_interval:
+            lambda_ge_mult = cfg.regularizer.ge_decay_mult ** (iteration // cfg.regularizer.ge_decay_every)
+            svraster_cuda.grid_loss_bw.grid_eikonal(
+                grid_pts=voxel_model._geo_grid_pts,
+                vox_key=voxel_model.vox_key,
+                grid_voxel_coord=grid_voxel_coord,
+                grid_voxel_size=grid_voxel_size.view(-1),
+                grid_res= 2**max_voxel_level,
+                grid_mask=voxel_model.grid_mask,
+                grid_keys= voxel_model.grid_keys,
+                grid2voxel=voxel_model.grid2voxel,
+                weight=cfg.regularizer.lambda_ge_density * lambda_ge_mult,
+                vox_size_inv=vox_size_min_inv,
+                no_tv_s=True,
+                tv_sparse=cfg.regularizer.ge_sparse,
+                grid_pts_grad=voxel_model._geo_grid_pts.grad)
+        
+        
         # Optimizer step
         voxel_model.optimizer.step()  # SVOptimizer
-
+        
         # Learning rate warmup scheduler step
         if iteration <= cfg.optimizer.n_warmup: #learning rate warmup
             rate = iteration / cfg.optimizer.n_warmup
@@ -303,7 +343,10 @@ def training(args):
             for param_group in voxel_model.optimizer.param_groups:
                 ori_lr = param_group["lr"]
                 param_group["lr"] *= cfg.optimizer.lr_decay_mult
-                print(f'LR decay of {param_group["name"]}: {ori_lr} => {param_group["lr"]}') #5/12
+                print(f'LR decay of {param_group["name"]}: {ori_lr} => {param_group["lr"]}')
+            cfg.regularizer.lambda_vg_density *= cfg.optimizer.lr_decay_mult
+            cfg.regularizer.lambda_tv_density *= cfg.optimizer.lr_decay_mult
+            cfg.regularizer.lambda_ge_density *= cfg.optimizer.lr_decay_mult
         '''
         if( cfg.model.density_mode == 'sdf' and iteration == 10000):
             cfg.regularizer.lambda_vg_density /= 10.0
@@ -413,26 +456,30 @@ def training(args):
             
             subdivide_mask = (rank > thres) & valid_mask
 
-            if cfg.model.density_mode == 'sdf' and iteration >= 2000: #수정해라
+            if cfg.model.density_mode == 'sdf': #수정해라
                 with torch.no_grad():
                     sdf_vals = voxel_model._geo_grid_pts[voxel_model.vox_key]  # [N, 8, 1]
                     signs = (sdf_vals > 0).float()
                     has_surface = (signs.min(dim=1).values != signs.max(dim=1).values).view(-1)
 
                 cur_level = voxel_model.octlevel.squeeze(1)
-                max_level = 7
+                max_level = 9 +cfg.model.outside_level # 9 + 1 = 10
                 under_level = cur_level < max_level
                 valid_mask = has_surface & under_level
 
                 if iteration < 15000:
-                    # priority 계산 후 top-50000 선택
-                    priority = voxel_model.subdiv_meta.squeeze(1).clone()
-                    priority[~valid_mask] = -1e6  # invalid은 매우 낮은 점수
-
                     topk = 50000
-                    topk_idx = torch.topk(priority, topk).indices
+
+                    valid_indices = torch.where(valid_mask)[0]
+                    
+                    valid_priorities = priority[valid_mask]
+
+                    k = min(topk, valid_priorities.numel())
+                    topk_rel_idx = torch.topk(valid_priorities, k).indices
+                    topk_abs_idx = valid_indices[topk_rel_idx]
+
                     subdivide_mask = torch.zeros_like(priority, dtype=torch.bool)
-                    subdivide_mask[topk_idx] = True
+                    subdivide_mask[topk_abs_idx] = True
                 else:
                     # 15k 이후는 조건에 맞는 모든 voxel subdivision
                     subdivide_mask = valid_mask
@@ -454,7 +501,56 @@ def training(args):
             voxel_model.subdiv_meta.zero_()  # reset subdiv meta
             remain_subdiv_times -= 1
             torch.cuda.empty_cache()
+        if need_pruning or need_subdividing:
+            vox_size_min_inv = 1.0 / voxel_model.vox_size.min().item() #복셀의 최소 크기
+            #print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}") #복셀의 최소 크기
+            max_voxel_level = voxel_model.octlevel.max().item()-cfg.model.outside_level
+            grid_voxel_coord = ((voxel_model.vox_center- voxel_model.vox_size * 0.5)-(voxel_model.scene_center-voxel_model.inside_extent*0.5))/voxel_model.inside_extent*(2**max_voxel_level) #복셀의 좌표
+            grid_voxel_size = (voxel_model.vox_size / voxel_model.inside_extent) * (2**max_voxel_level) #복셀의 크기
+            #print(f"grid_voxel_coord = {grid_voxel_coord}") #복셀의 좌표
+            #print(f"grid_voxel_size = {grid_voxel_size}") #복셀의 크기
+            print(f'level max : {max_voxel_level}') #복셀의 최대 레벨
+            #print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}") #복셀의 최소 크기
 
+            voxel_model.grid_mask, voxel_model.grid_keys, voxel_model.grid2voxel = octree_utils.update_valid_gradient_table(cfg.model.density_mode, voxel_model.vox_center, voxel_model.vox_size, voxel_model.scene_center, voxel_model.inside_extent, max_voxel_level)
+            torch.cuda.synchronize()
+            '''
+            print(f"voxel_model.grid_mask = {voxel_model.grid_mask}") #grid_mask 출력
+            rand_idx = torch.randperm(len(voxel_model.grid_keys), device='cuda')[:10]
+            grid_res = 2 ** max_voxel_level
+            grid_mask = voxel_model.grid_mask
+            grid_keys = voxel_model.grid_keys
+            grid2voxel = voxel_model.grid2voxel
+
+            for i in range(10):
+                key = grid_keys[rand_idx[i]].item()
+                x = key % grid_res
+                y = (key // grid_res) % grid_res
+                z = key // (grid_res * grid_res)
+                print(f"\n[{i}] key = {key} => ({x}, {y}, {z})")
+
+                voxel_id = grid2voxel[rand_idx[i]].item()
+                voxel_coord = grid_voxel_coord[voxel_id]
+                voxel_size = grid_voxel_size[voxel_id]
+                print(f"Voxel ID: {voxel_id}, Coord: {voxel_coord}, Size: {voxel_size}")
+
+                def flatten(x, y, z):
+                    return x + y * grid_res + z * grid_res * grid_res
+
+                directions = [("x+1", 1, 0, 0), ("x-1", -1, 0, 0),
+                            ("y+1", 0, 1, 0), ("y-1", 0, -1, 0),
+                            ("z+1", 0, 0, 1), ("z-1", 0, 0, -1)]
+
+                for label, dx, dy, dz in directions:
+                    nx, ny, nz = x + dx, y + dy, z + dz
+                    if 0 <= nx < grid_res and 0 <= ny < grid_res and 0 <= nz < grid_res:
+                        nkey = flatten(nx, ny, nz)
+                        in_mask = grid_mask[nkey].item()
+                        in_keys = nkey in grid_keys
+                        print(f"  Neighbor {label} ({nx}, {ny}, {nz}) key={nkey} -> "
+                            f"mask={in_mask}, binary_search_hit={in_keys}")
+                    else:
+                        print(f"  Neighbor {label} out-of-bounds")'''
         ######################################################
         # End of adaptive voxels procedure
         ######################################################
@@ -691,12 +787,11 @@ if __name__ == "__main__":
         cfg.init.geo_init = 0.0
         cfg.regularizer.dist_from = 10000
         cfg.regularizer.lambda_dist = 0.1
-        cfg.regularizer.lambda_tv_density = 1e-7
+        cfg.regularizer.lambda_tv_density = 0.0 #1e-6
         cfg.regularizer.tv_from = 0000
         cfg.regularizer.tv_until = 20000
-        cfg.regularizer.lambda_vg_density = 1e-7
+        cfg.regularizer.lambda_vg_density = 0.0 #1e-8
         cfg.regularizer.vg_until = 20000
-        cfg.regularizer.lambda_eikonal = 0.0  # 0.0005
         cfg.regularizer.lambda_ascending = 0.0
         cfg.regularizer.ascending_from = 0
         cfg.regularizer.lambda_normal_dmean = 0.0
@@ -706,8 +801,8 @@ if __name__ == "__main__":
         cfg.procedure.prune_from = 3000
         cfg.procedure.prune_every = 3000
         cfg.procedure.prune_until = 15000
-        cfg.procedure.subdivide_from = 4000
-
+        cfg.procedure.subdivide_from = 3000
+        cfg.procedure.subdivide_every = 3000
 
     # Global init
     seed_everything(cfg.procedure.seed)
