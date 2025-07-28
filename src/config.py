@@ -127,7 +127,7 @@ cfg.regularizer = CfgNode(dict(
     n_dmed_end=20_000,
 
     # Total variation loss of density grid
-    lambda_tv_density = 1e-10,
+    lambda_tv_density = 1e-9,
     tv_from = 0,
     tv_until = 10000,
     tv_decay_every = 1000,
@@ -136,17 +136,24 @@ cfg.regularizer = CfgNode(dict(
 
     lambda_vg_density = 1e-10,
     vg_from = 0,
-    vg_until = 10000,
-    vg_decay_every = 1000,
-    vg_decay_mult = 1.0,
+    vg_until = 3000,
+    vg_decay_every = 2000,
+    vg_decay_mult = 0.5,
     vg_sparse = False,
 
     lambda_ge_density = 1e-8,
     ge_from = 0,
     ge_until = 20000,
-    ge_decay_every = 1000,
-    ge_decay_mult = 1.0,
+    ge_decay_every = 3000,
+    ge_decay_mult = 1,
     ge_sparse = False,
+
+    lambda_ls_density = 1e-10,
+    ls_from = 00,
+    ls_until = 20000,
+    ls_decay_every = 6000,
+    ls_decay_mult = 1,
+    ls_sparse = False,
 
     # Data augmentation
     ss_aug_max = 1.5,

@@ -16,13 +16,18 @@ def total_variation(grid_pts, vox_key, weight, vox_size_inv, no_tv_s, tv_sparse,
     assert vox_key.shape[0] == vox_size_inv.numel()
     _C.total_variation_bw(grid_pts, vox_key, weight, vox_size_inv, no_tv_s, tv_sparse, grid_pts_grad)
 
-def voxel_gradient(grid_pts, vox_key, weight, vox_size_inv, no_tv_s, tv_sparse, grid_pts_grad):
+def voxel_gradient(grid_pts, vox_key, grid_voxel_coord,grid_voxel_size,grid_res, grid_mask, grid_keys, grid2voxel, weight, vox_size_inv, no_tv_s,tv_sparse,grid_pts_grad):
     assert grid_pts.shape == grid_pts_grad.shape
     assert len(vox_key.shape) == 2 and vox_key.shape[1] == 8
-    assert vox_key.shape[0] == vox_size_inv.numel()
-    _C.voxel_gradient_bw(grid_pts, vox_key, weight, vox_size_inv, no_tv_s, tv_sparse, grid_pts_grad)
+    _C.voxel_gradient_bw(grid_pts, vox_key, grid_voxel_coord,grid_voxel_size,grid_res, grid_mask, grid_keys, grid2voxel, weight, vox_size_inv, no_tv_s,tv_sparse,grid_pts_grad)
 
 def grid_eikonal(grid_pts, vox_key, grid_voxel_coord,grid_voxel_size,grid_res, grid_mask, grid_keys, grid2voxel, weight, vox_size_inv, no_tv_s,tv_sparse,grid_pts_grad):
     assert grid_pts.shape == grid_pts_grad.shape
     assert len(vox_key.shape) == 2 and vox_key.shape[1] == 8
     _C.grid_eikonal_bw(grid_pts, vox_key, grid_voxel_coord,grid_voxel_size,grid_res, grid_mask, grid_keys, grid2voxel, weight, vox_size_inv, no_tv_s,tv_sparse,grid_pts_grad)
+
+def laplacian_smoothness(grid_pts, vox_key, grid_voxel_coord, grid_voxel_size, grid_res, grid_mask, grid_keys, grid2voxel, weight, vox_size_inv, no_tv_s, tv_sparse, grid_pts_grad):
+    assert grid_pts.shape == grid_pts_grad.shape
+    assert len(vox_key.shape) == 2 and vox_key.shape[1] == 8
+    _C.laplacian_smoothness_bw(grid_pts, vox_key, grid_voxel_coord, grid_voxel_size, grid_res, grid_mask, grid_keys, grid2voxel, weight, vox_size_inv, no_tv_s, tv_sparse, grid_pts_grad)
+    

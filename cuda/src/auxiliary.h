@@ -332,6 +332,31 @@ __forceinline__ __device__ float tri_interp_weight(const float3 qt, float interp
     return interp_w[0] + interp_w[1] + interp_w[2] + interp_w[3] +
            interp_w[4] + interp_w[5] + interp_w[6] + interp_w[7];
 }
+__forceinline__ __device__ void tri_interp_grad_weight(
+    const float3 qt,
+    float grad_interp_w[8][3]  // [8 vertices][dx, dy, dz]
+) {
+    float x = qt.x, y = qt.y, z = qt.z;
+    float dx[2] = {-1.f, 1.f};
+    float dy[2] = {-1.f, 1.f};
+    float dz[2] = {-1.f, 1.f};
+
+    // Precompute weight components
+    float wx[2] = {1.f - x, x};
+    float wy[2] = {1.f - y, y};
+    float wz[2] = {1.f - z, z};
+
+    for (int ix = 0; ix <= 1; ++ix) {
+        for (int iy = 0; iy <= 1; ++iy) {
+            for (int iz = 0; iz <= 1; ++iz) {
+                int idx = (ix << 2) | (iy << 1) | iz;
+                grad_interp_w[idx][0] = dx[ix] * wy[iy] * wz[iz]; // ∂w/∂x
+                grad_interp_w[idx][1] = wx[ix] * dy[iy] * wz[iz]; // ∂w/∂y
+                grad_interp_w[idx][2] = wx[ix] * wy[iy] * dz[iz]; // ∂w/∂z
+            }
+        }
+    }
+}
 __forceinline__ __device__ int flatten_grid_key(int x, int y, int z, int res) {
     return x + y * res + z * res * res;
 }
@@ -369,7 +394,7 @@ __forceinline__ __device__ float interpolate_sdf_and_grad(
     const int32_t* grid_keys, const int32_t* grid2voxel,
     const float* voxel_coords, const float* voxel_sizes,
     const int64_t* vox_key, const float* grid_pts, int grid_res, int num_voxels, int grid_pts_size,
-    float* weights_out, int& voxel_id_out
+    float* weights_out, int& voxel_id_out, float3 randv
 ) {
     int gk = flatten_grid_key(gx, gy, gz, grid_res);
     int idx = binary_search(grid_keys,M , gk);
@@ -378,8 +403,7 @@ __forceinline__ __device__ float interpolate_sdf_and_grad(
         return 0.0f;
     }
     voxel_id_out = grid2voxel[idx];
-
-    float3 pt = make_float3(gx + 0.5f, gy + 0.5f, gz + 0.5f);
+    float3 pt = make_float3(gx+randv.x, gy+randv.y, gz+randv.z);
 
     float3 base = make_float3(
         voxel_coords[voxel_id_out * 3 + 0],
@@ -425,7 +449,23 @@ __forceinline__ __device__ void accumulate_grad(
         atomicAdd(grid_pts_grad + pt_id, dL_dsdf * w[i]);
     }
 }
-
+__forceinline__ __device__ float hash_to_float(uint32_t x) {
+    x ^= x >> 17;
+    x *= 0xed5ad4bb;
+    x ^= x >> 11;
+    x *= 0xac4c1b51;
+    x ^= x >> 15;
+    x *= 0x31848bab;
+    x ^= x >> 14;
+    return (x & 0xFFFFFF) / float(0x1000000);  // ∈ [0,1)
+}
+__forceinline__ __device__ float3 get_rand_vec(int tid, int seed) {
+    return make_float3(
+        hash_to_float(seed * 73856093 ^ tid * 3 + 0),
+        hash_to_float(seed * 19349663 ^ tid * 3 + 1),
+        hash_to_float(seed * 83492791 ^ tid * 3 + 2)
+    );
+}
 // Debugging helper.
 #define CHECK_CUDA(debug) \
 if(debug) { \

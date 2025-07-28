@@ -55,22 +55,22 @@ __global__ void total_variation_bw_cuda(
         vlst[i] = grid_pts[i_book[i] * C + iC];
 
     
-    bool has_surface = false;
-    float sign0 = (vlst[0] > 0.f);
-    for (int i = 1; i < 8; ++i)
-        has_surface |= ((vlst[i] > 0.f) != sign0);
+    //bool has_surface = false;
+    //float sign0 = (vlst[0] > 0.f);
+    //for (int i = 1; i < 8; ++i)
+    //    has_surface |= ((vlst[i] > 0.f) != sign0);
 
     float w = weight;
-    if (has_surface)
-        w *= 3.0f;
+    //if (has_surface)
+    //    w *= 3.0f;
 
     
-    /*
+    
     if (!no_tv_s)
-        w *= 0.01f * sqrtf(vox_size_inv[iN]);
-    */
+        w *= 0.01f * vox_size_inv[iN];
+    
     // Compute gradient wrt total variation loss
-    /*
+    
     int glst[8] = {0};
     #pragma unroll
     for (int i=0; i<8; ++i)
@@ -84,8 +84,8 @@ __global__ void total_variation_bw_cuda(
     #pragma unroll
     for (int i=0; i<8; ++i)
         dtv_dgrid_pts[i] = w * ((float)glst[i]);
-    */
     
+    /*
     float edge_diff[12];
     edge_diff[0] = vlst[0] - vlst[1]; // x-edge
     edge_diff[1] = vlst[2] - vlst[3]; // x-edge
@@ -138,7 +138,7 @@ __global__ void total_variation_bw_cuda(
     float dtv_dgrid_pts[8] = {0.f};
     for (int i = 0; i < 8; ++i) {
         dtv_dgrid_pts[i] += w * grad_parallel[i];
-    }
+    }*/
     
   /*
     float dtv_dgrid_pts[8] = {0.f};

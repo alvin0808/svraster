@@ -160,12 +160,12 @@ def training(args):
     progress_bar = tqdm(iter_rng, desc="Training")   #10 iterations마다 processbar update
     #parameters for eikonal loss
     vox_size_min_inv = 1.0 / voxel_model.vox_size.min().item() #복셀의 최소 크기
-    print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}") #복셀의 최소 크기
+    #print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}") #복셀의 최소 크기
     max_voxel_level = voxel_model.octlevel.max().item()-cfg.model.outside_level
     grid_voxel_coord = ((voxel_model.vox_center- voxel_model.vox_size * 0.5)-(voxel_model.scene_center-voxel_model.inside_extent*0.5))/voxel_model.inside_extent*(2**max_voxel_level) #복셀의 좌표
     grid_voxel_size = (voxel_model.vox_size / voxel_model.inside_extent) * (2**max_voxel_level) #복셀의 크기
-    print(f"grid_voxel_coord = {grid_voxel_coord}") #복셀의 좌표
-    print(f"grid_voxel_size = {grid_voxel_size}") #복셀의 크기
+    #print(f"grid_voxel_coord = {grid_voxel_coord}") #복셀의 좌표
+    #print(f"grid_voxel_size = {grid_voxel_size}") #복셀의 크기
     '''
     rand_idx = torch.randperm(len(voxel_model.grid_keys), device='cuda')[:10]
     for i in range(10):
@@ -248,18 +248,18 @@ def training(args):
             photo_loss = mse
         loss = cfg.regularizer.lambda_photo * photo_loss #1. mse loss
 
-        if need_sparse_depth: #sparse depth loss 추가 실험용
-            loss += cfg.regularizer.lambda_sparse_depth * sparse_depth_loss(cam, render_pkg)
+        # if need_sparse_depth: #sparse depth loss 추가 실험용
+        #     loss += cfg.regularizer.lambda_sparse_depth * sparse_depth_loss(cam, render_pkg)
 
         if cfg.regularizer.lambda_mask: #추가 실험용
             gt_T = 1 - cam.mask.cuda()
             loss += cfg.regularizer.lambda_mask * loss_utils.l2_loss(render_pkg['T'], gt_T)
 
-        if need_depthanythingv2: #추가 실험용
-            loss += cfg.regularizer.lambda_depthanythingv2 * depthanythingv2_loss(cam, render_pkg, iteration)
+        # if need_depthanythingv2: #추가 실험용
+        #     loss += cfg.regularizer.lambda_depthanythingv2 * depthanythingv2_loss(cam, render_pkg, iteration)
 
-        if need_mast3r_metric_depth: #추가 실험용
-            loss += cfg.regularizer.lambda_mast3r_metric_depth * mast3r_metric_depth_loss(cam, render_pkg, iteration)
+        # if need_mast3r_metric_depth: #추가 실험용
+        #     loss += cfg.regularizer.lambda_mast3r_metric_depth * mast3r_metric_depth_loss(cam, render_pkg, iteration)
 
         if cfg.regularizer.lambda_ssim: #2. SSIM loss
             loss += cfg.regularizer.lambda_ssim * loss_utils.fast_ssim_loss(render_image, gt_image)
@@ -289,6 +289,7 @@ def training(args):
         # Grid-level regularization
         grid_reg_interval = iteration >= cfg.regularizer.tv_from and iteration <= cfg.regularizer.tv_until
         if cfg.regularizer.lambda_tv_density and grid_reg_interval:
+            asdf = voxel_model._geo_grid_pts.grad * 10000
             lambda_tv_mult = cfg.regularizer.tv_decay_mult ** (iteration // cfg.regularizer.tv_decay_every)
             svraster_cuda.grid_loss_bw.total_variation(
                 grid_pts=voxel_model._geo_grid_pts,
@@ -298,21 +299,39 @@ def training(args):
                 no_tv_s=True,
                 tv_sparse=cfg.regularizer.tv_sparse,
                 grid_pts_grad=voxel_model._geo_grid_pts.grad)
-
+            qwer = voxel_model._geo_grid_pts.grad * 10000
+            if iteration % 100 == 0:
+                print("---")
+                print(round(torch.min(qwer-asdf).item(),4), round(torch.max(qwer-asdf).item(),4), round(torch.mean(torch.abs(qwer - asdf)).item(), 4) )
         voxel_gradient_interval = iteration >= cfg.regularizer.vg_from and iteration <= cfg.regularizer.vg_until
         if cfg.regularizer.lambda_vg_density and voxel_gradient_interval:
+            asdf = voxel_model._geo_grid_pts.grad * 10000
             lambda_vg_mult = cfg.regularizer.vg_decay_mult ** (iteration // cfg.regularizer.vg_decay_every)
             svraster_cuda.grid_loss_bw.voxel_gradient(
                 grid_pts=voxel_model._geo_grid_pts,
                 vox_key=voxel_model.vox_key,
+                grid_voxel_coord=grid_voxel_coord,
+                grid_voxel_size=grid_voxel_size.view(-1),
+                grid_res= 2**max_voxel_level,
+                grid_mask=voxel_model.grid_mask,
+                grid_keys= voxel_model.grid_keys,
+                grid2voxel=voxel_model.grid2voxel,
                 weight=cfg.regularizer.lambda_vg_density * lambda_vg_mult,
-                vox_size_inv=voxel_model.vox_size_inv,
+                vox_size_inv=vox_size_min_inv,
                 no_tv_s=True,
                 tv_sparse=cfg.regularizer.vg_sparse,
                 grid_pts_grad=voxel_model._geo_grid_pts.grad)
+            qwer = voxel_model._geo_grid_pts.grad * 10000
+            if iteration % 100 == 0:
+                print(round(torch.min(qwer-asdf).item(),4), round(torch.max(qwer-asdf).item(),4), round(torch.mean(torch.abs(qwer - asdf)).item(), 4) )
+            
         
         grid_eikonal_interval = iteration >= cfg.regularizer.ge_from and iteration <= cfg.regularizer.ge_until
         if cfg.regularizer.lambda_ge_density and grid_eikonal_interval:
+            # if iteration == 3000:
+            #     print("Eikonal loss applied (before)")
+            asdf = voxel_model._geo_grid_pts.grad * 10000
+            # breakpoint()
             lambda_ge_mult = cfg.regularizer.ge_decay_mult ** (iteration // cfg.regularizer.ge_decay_every)
             svraster_cuda.grid_loss_bw.grid_eikonal(
                 grid_pts=voxel_model._geo_grid_pts,
@@ -328,7 +347,35 @@ def training(args):
                 no_tv_s=True,
                 tv_sparse=cfg.regularizer.ge_sparse,
                 grid_pts_grad=voxel_model._geo_grid_pts.grad)
+            # if iteration == 1000:
+            #     print("Eikonal loss applied (after)")
+            qwer = voxel_model._geo_grid_pts.grad * 10000
+            if iteration % 100 == 0:
+                print(round(torch.min(qwer-asdf).item(),4), round(torch.max(qwer-asdf).item(),4), round(torch.mean(torch.abs(qwer - asdf)).item(), 4) )
+            # breakpoint()
         
+        laplacian_interval = iteration >= cfg.regularizer.ls_from and iteration <= cfg.regularizer.ls_until
+        if cfg.regularizer.lambda_ls_density and laplacian_interval:
+            asdf = voxel_model._geo_grid_pts.grad * 10000
+            lambda_ls_mult = cfg.regularizer.ls_decay_mult ** (iteration // cfg.regularizer.ls_decay_every)
+            svraster_cuda.grid_loss_bw.laplacian_smoothness(
+                grid_pts=voxel_model._geo_grid_pts,
+                vox_key=voxel_model.vox_key,
+                grid_voxel_coord=grid_voxel_coord,
+                grid_voxel_size=grid_voxel_size.view(-1),
+                grid_res= 2**max_voxel_level,
+                grid_mask=voxel_model.grid_mask,
+                grid_keys= voxel_model.grid_keys,
+                grid2voxel=voxel_model.grid2voxel,
+                weight=cfg.regularizer.lambda_ls_density * lambda_ls_mult,
+                vox_size_inv=vox_size_min_inv,
+                no_tv_s=True,
+                tv_sparse=cfg.regularizer.ls_sparse,
+                grid_pts_grad=voxel_model._geo_grid_pts.grad)
+            qwer = voxel_model._geo_grid_pts.grad * 10000
+            if iteration % 100 == 0:
+                print(round(torch.min(qwer-asdf).item(),4), round(torch.max(qwer-asdf).item(),4), round(torch.mean(torch.abs(qwer - asdf)).item(), 4) )
+            
         
         # Optimizer step
         voxel_model.optimizer.step()  # SVOptimizer
@@ -347,6 +394,7 @@ def training(args):
             cfg.regularizer.lambda_vg_density *= cfg.optimizer.lr_decay_mult
             cfg.regularizer.lambda_tv_density *= cfg.optimizer.lr_decay_mult
             cfg.regularizer.lambda_ge_density *= cfg.optimizer.lr_decay_mult
+            cfg.regularizer.lambda_ls_density *= cfg.optimizer.lr_decay_mult
         '''
         if( cfg.model.density_mode == 'sdf' and iteration == 10000):
             cfg.regularizer.lambda_vg_density /= 10.0
@@ -406,7 +454,7 @@ def training(args):
 
                 min_abs_sdf = sdf_vals.abs().min(dim=1).values.view(-1)  # 각 복셀의 가장 가까운 꼭짓점 SDF 절댓값
                 global_vox_size_min = voxel_model.vox_size.min().item()
-                sdf_thresh = 3.0 * global_vox_size_min
+                sdf_thresh = 3.5 * global_vox_size_min
                 # sdf_thresh 감소: 3000 → 15000에서 0.5 → 0.2
                 '''
                 start_iter = 3000
@@ -514,6 +562,7 @@ def training(args):
 
             voxel_model.grid_mask, voxel_model.grid_keys, voxel_model.grid2voxel = octree_utils.update_valid_gradient_table(cfg.model.density_mode, voxel_model.vox_center, voxel_model.vox_size, voxel_model.scene_center, voxel_model.inside_extent, max_voxel_level)
             torch.cuda.synchronize()
+
             '''
             print(f"voxel_model.grid_mask = {voxel_model.grid_mask}") #grid_mask 출력
             rand_idx = torch.randperm(len(voxel_model.grid_keys), device='cuda')[:10]
@@ -781,17 +830,19 @@ if __name__ == "__main__":
     if args.seunghun:
         cfg.model.density_mode = "sdf"
         cfg.model.vox_geo_mode = "triinterp3"
-        cfg.optimizer.geo_lr = 0.0025
+        cfg.optimizer.geo_lr = 0.005
+        cfg.optimizer.sh0_lr = 0.01 #0.01
+        cfg.optimizer.shs_lr = 0.00025 # 0.00025
         cfg.optimizer.lr_decay_ckpt = [7000,14000]
         cfg.optimizer.lr_decay_mult = 0.3
         cfg.init.geo_init = 0.0
         cfg.regularizer.dist_from = 10000
         cfg.regularizer.lambda_dist = 0.1
-        cfg.regularizer.lambda_tv_density = 0.0 #1e-6
+        cfg.regularizer.lambda_tv_density = 1e-11
         cfg.regularizer.tv_from = 0000
-        cfg.regularizer.tv_until = 20000
-        cfg.regularizer.lambda_vg_density = 0.0 #1e-8
-        cfg.regularizer.vg_until = 20000
+        cfg.regularizer.tv_until = 10000
+        cfg.regularizer.lambda_vg_density =  0.0#1e-8
+        cfg.regularizer.vg_until = 8000
         cfg.regularizer.lambda_ascending = 0.0
         cfg.regularizer.ascending_from = 0
         cfg.regularizer.lambda_normal_dmean = 0.0
@@ -800,7 +851,7 @@ if __name__ == "__main__":
         cfg.regularizer.n_dmed_from = 10000
         cfg.procedure.prune_from = 3000
         cfg.procedure.prune_every = 3000
-        cfg.procedure.prune_until = 15000
+        cfg.procedure.prune_until = 14000
         cfg.procedure.subdivide_from = 3000
         cfg.procedure.subdivide_every = 3000
 

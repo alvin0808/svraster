@@ -1,4 +1,4 @@
-#include "ge_compute.h"
+#include "ls_compute.h"
 #include "auxiliary.h"
 
 #include <cuda.h>
@@ -7,11 +7,11 @@
 #include <cooperative_groups.h>
 namespace cg = cooperative_groups;
 
-namespace GE_COMPUTE {
+namespace LS_COMPUTE {
 // 1. CUDA 커널
 
 
-__global__ void grid_eikonal_kernel(
+__global__ void grid_laplacian_kernel(
     const float* __restrict__ grid_pts,       // [M, 1]
     const int64_t* __restrict__ vox_key,     // [N, 8]
     const int32_t* __restrict__ grid_keys,    // [G]
@@ -29,33 +29,6 @@ __global__ void grid_eikonal_kernel(
 ){
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= M) return;
-    /*
-    int vox_id = grid2voxel[tid];
-    int64_t grid_pts_idx[8];
-    float sdfs[8];
-    float3 grad = make_float3(0.0f, 0.0f, 0.0f);
-    float w[8][3];
-    int seed = (int)clock64();
-    float3 randv=get_rand_vec(tid, seed);
-    
-    tri_interp_grad_weight(randv, w);
-    for(int i=0;i<8;i++){
-        grid_pts_idx[i] = vox_key[vox_id * 8 + i];
-        sdfs[i]=grid_pts[grid_pts_idx[i]];
-        grad.x += w[i][0]*sdfs[i];
-        grad.y += w[i][1]*sdfs[i];
-        grad.z += w[i][2]*sdfs[i];
-    }
-    float grad_norm = sqrtf(grad.x * grad.x + grad.y * grad.y + grad.z * grad.z + 1e-8f);
-    float grad_world = grad_norm * vox_size_inv;
-    float dL_dg = 2.0f * (grad_world - 1.0f) * weight * vox_size_inv;
-    float dL_dx = dL_dg * grad.x / grad_norm ;
-    float dL_dy = dL_dg * grad.y / grad_norm ;
-    float dL_dz = dL_dg * grad.z / grad_norm ;    
-    for(int i=0;i<8;i++){
-        atomicAdd( grid_pts_grad + grid_pts_idx[i], w[i][0] * dL_dx + w[i][1] * dL_dy + w[i][2] * dL_dz);
-    }*/
-    
     if(voxel_sizes[grid2voxel[tid]] > 2.0f) return;
     int gk = grid_keys[tid];
     int x = gk % grid_res;
@@ -63,51 +36,69 @@ __global__ void grid_eikonal_kernel(
     int z = gk / (grid_res * grid_res);
     if (!grid_mask[gk] || !check_valid_neighbors(x, y, z, grid_res, grid_mask)) return;
 
-    float w[6][8];
-    int vox_id[6];
-
+    float w[7][8];
+    int vox_id[7];
+    int seed = (int)clock64();
+    float3 randv=get_rand_vec(tid, seed);
+    float neighbor_sdfs[6];
     int dx[6] = {+1, -1, 0, 0, 0, 0};
     int dy[6] = {0, 0, +1, -1, 0, 0};
     int dz[6] = {0, 0, 0, 0, +1, -1};
-    int seed = (int)clock64();
-    float3 randv=get_rand_vec(tid, seed);
-    float sdfs[6];
+
+    float center_sdf = interpolate_sdf_and_grad(M,
+        x, y, z,
+        grid_keys, grid2voxel,
+        voxel_coords, voxel_sizes,
+        vox_key, grid_pts, grid_res,
+        num_voxels, grid_pts_size,
+        w[0], vox_id[0],randv); // center weight and id (dummy reuse)
+    
     for (int i = 0; i < 6; ++i) {
-        sdfs[i] = interpolate_sdf_and_grad(M,
+        neighbor_sdfs[i] = interpolate_sdf_and_grad(M,
             x + dx[i], y + dy[i], z + dz[i],
             grid_keys, grid2voxel,
             voxel_coords, voxel_sizes,
             vox_key, grid_pts, grid_res,
             num_voxels, grid_pts_size,
-            w[i], vox_id[i],randv);
+            w[i+1], vox_id[i+1],randv);
     }
-    //if(grid_res == 128) printf("ok");
 
-    float dx_val = (sdfs[0] - sdfs[1]) *0.5f;
-    float dy_val = (sdfs[2] - sdfs[3]) *0.5f;
-    float dz_val = (sdfs[4] - sdfs[5]) *0.5f;
+    // for (int i = 0; i < 6; ++i) sdf_avg += neighbor_sdfs[i];
+    // sdf_avg /= 6.0f;
+    float lap_residual_x = neighbor_sdfs[0] + neighbor_sdfs[1] - 2.0f * center_sdf;
+    float lap_residual_y = neighbor_sdfs[2] + neighbor_sdfs[3] - 2.0f * center_sdf;
+    float lap_residual_z = neighbor_sdfs[4] + neighbor_sdfs[5] - 2.0f * center_sdf;
 
-    float grad_norm = sqrtf(dx_val*dx_val + dy_val*dy_val + dz_val*dz_val + 1e-8f);
-    float grad_world = grad_norm * 0.5* vox_size_inv; //여기 0.5둬야 학습이 잘됨
-    float dL_dg = 2.0f * (grad_world - 1.0f) * weight;
-
-    float dL_dx = dL_dg * dx_val / grad_norm * 0.5f*vox_size_inv;
-    float dL_dy = dL_dg * dy_val / grad_norm * 0.5f*vox_size_inv;
-    float dL_dz = dL_dg * dz_val / grad_norm * 0.5f*vox_size_inv;
+    // size
+    float lap_residual = sqrtf(lap_residual_x * lap_residual_x +
+                          lap_residual_y * lap_residual_y +
+                          lap_residual_z * lap_residual_z + 1e-10f); // avoid division by zero
+    float size =  weight* 0.5*vox_size_inv*vox_size_inv;
     
-    accumulate_grad(vox_id[0], num_voxels, vox_key, w[0], dL_dx/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]], grid_pts_grad);
-    accumulate_grad(vox_id[1], num_voxels,vox_key, w[1], -dL_dx/voxel_sizes[vox_id[1]]/voxel_sizes[vox_id[1]]/voxel_sizes[vox_id[1]], grid_pts_grad);
-    accumulate_grad(vox_id[2], num_voxels,vox_key, w[2], dL_dy/voxel_sizes[vox_id[2]]/voxel_sizes[vox_id[2]]/voxel_sizes[vox_id[2]], grid_pts_grad);
-    accumulate_grad(vox_id[3], num_voxels,vox_key, w[3], -dL_dy/voxel_sizes[vox_id[3]]/voxel_sizes[vox_id[3]]/voxel_sizes[vox_id[3]], grid_pts_grad);
-    accumulate_grad(vox_id[4], num_voxels,vox_key, w[4], dL_dz/voxel_sizes[vox_id[4]]/voxel_sizes[vox_id[4]]/voxel_sizes[vox_id[4]], grid_pts_grad);
-    accumulate_grad(vox_id[5], num_voxels,vox_key, w[5], -dL_dz/voxel_sizes[vox_id[5]]/voxel_sizes[vox_id[5]]/voxel_sizes[vox_id[5]], grid_pts_grad);
-    
+    float dL_dx = 0.5 / lap_residual * 2* lap_residual_x * size; //어캐할지 고민
+    float dL_dy = 0.5 / lap_residual * 2* lap_residual_y * size;
+    float dL_dz = 0.5 / lap_residual * 2* lap_residual_z * size;
+    float dL_dcenter = -2.0f * (dL_dx + dL_dy + dL_dz);
 
+ 
+
+
+    // float lap_residual = center_sdf - sdf_avg; // ∇²f ≈ f(x) - mean(neighbors)
+    // float dL_df = 2.0f * lap_residual * weight; // gradient w.r.t. f(x_i)
+
+    accumulate_grad(vox_id[0], num_voxels, vox_key, w[0], dL_dcenter/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]], grid_pts_grad);
+    accumulate_grad(vox_id[1], num_voxels, vox_key, w[1], dL_dx/voxel_sizes[vox_id[1]]/voxel_sizes[vox_id[1]]/voxel_sizes[vox_id[0]], grid_pts_grad);
+    accumulate_grad(vox_id[2], num_voxels, vox_key, w[2], dL_dx/voxel_sizes[vox_id[2]]/voxel_sizes[vox_id[2]]/voxel_sizes[vox_id[0]], grid_pts_grad);
+    accumulate_grad(vox_id[3], num_voxels, vox_key, w[3], dL_dy/voxel_sizes[vox_id[3]]/voxel_sizes[vox_id[3]]/voxel_sizes[vox_id[0]], grid_pts_grad);
+    accumulate_grad(vox_id[4], num_voxels, vox_key, w[4], dL_dy/voxel_sizes[vox_id[4]]/voxel_sizes[vox_id[4]]/voxel_sizes[vox_id[0]], grid_pts_grad);
+    accumulate_grad(vox_id[5], num_voxels, vox_key, w[5], dL_dz/voxel_sizes[vox_id[5]]/voxel_sizes[vox_id[5]]/voxel_sizes[vox_id[0]], grid_pts_grad);
+    accumulate_grad(vox_id[6], num_voxels, vox_key, w[6], dL_dz/voxel_sizes[vox_id[6]]/voxel_sizes[vox_id[6]]/voxel_sizes[vox_id[0]], grid_pts_grad);
+    
 
 }
 
 // 2. C++ 인터페이스
-void grid_eikonal_bw(
+void laplacian_smoothness_bw(
     const torch::Tensor& grid_pts,
     const torch::Tensor& vox_key,
     const torch::Tensor& grid_voxel_coord,
@@ -128,7 +119,7 @@ void grid_eikonal_bw(
     const int blocks = (M + threads - 1) / threads;
     int num_voxels = vox_key.size(0);
     int grid_pts_size = grid_pts.size(0);
-    grid_eikonal_kernel<<<blocks, threads>>>(
+    grid_laplacian_kernel<<<blocks, threads>>>(
         grid_pts.contiguous().data_ptr<float>(),
         vox_key.contiguous().data_ptr<int64_t>(),
         grid_keys.contiguous().data_ptr<int32_t>(),
