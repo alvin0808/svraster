@@ -405,7 +405,7 @@ renderCUDA(
                 suffix_w += pt_w;
             }
             const float sdf0_t = sdf0_buffer[pix_id];
-            if (need_normal && density_mode == DENSITY_SDF && sdf0_t > 0.f) {
+            if (0){//(need_normal && density_mode == DENSITY_SDF && sdf0_t > 0.f) {
                 float3 p_sdf0 = ro + sdf0_t * rd;
 
                 float3 min_corner = vox_c - 0.5f * vox_l;
@@ -461,7 +461,7 @@ renderCUDA(
                 }
             }
             // Gradient from normal
-            if (need_normal && density_mode != DENSITY_SDF)
+            if (1)//(need_normal && density_mode != DENSITY_SDF)
             {
                 float N_grad_to_geo_params[8];
                 const float lin_nx = (

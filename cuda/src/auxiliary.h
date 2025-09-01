@@ -424,6 +424,7 @@ __forceinline__ __device__ float interpolate_sdf_and_grad(
     for (int i = 0; i < 8; ++i) {
         if(weights_out[i]>1 || weights_out[i]<0) {
             printf("Error: weight[%d] = %f is out of bounds [0, 1].\n", i, weights_out[i]);
+            printf("pt: (%f, %f, %f), base: (%f, %f, %f), size: %f\n", pt.x, pt.y, pt.z, base.x, base.y, base.z, size);
             return 0.0f;
         }
         int pt_id = vox_key[voxel_id_out * 8 + i];

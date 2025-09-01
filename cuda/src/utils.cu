@@ -225,13 +225,14 @@ __global__ void valid_gradient_table_kernel(
         max_corner[d] = center[d] + 0.5f * size;
     }
 
-    int x0 = int((min_corner[0] - inside_min[0]) / (inside_max[0] - inside_min[0]) * grid_res);
-    int y0 = int((min_corner[1] - inside_min[1]) / (inside_max[1] - inside_min[1]) * grid_res);
-    int z0 = int((min_corner[2] - inside_min[2]) / (inside_max[2] - inside_min[2]) * grid_res);
-    int x1 = int((max_corner[0] - inside_min[0]) / (inside_max[0] - inside_min[0]) * grid_res);
-    int y1 = int((max_corner[1] - inside_min[1]) / (inside_max[1] - inside_min[1]) * grid_res);
-    int z1 = int((max_corner[2] - inside_min[2]) / (inside_max[2] - inside_min[2]) * grid_res);
-    //printf("Voxel %d: (%d, %d, %d) to (%d, %d, %d)\n", i, x0, y0, z0, x1, y1, z1);
+    int x0 = int(roundf((min_corner[0] - inside_min[0]) / (inside_max[0] - inside_min[0]) * grid_res));
+    int y0 = int(roundf((min_corner[1] - inside_min[1]) / (inside_max[1] - inside_min[1]) * grid_res));
+    int z0 = int(roundf((min_corner[2] - inside_min[2]) / (inside_max[2] - inside_min[2]) * grid_res));
+    int x1 = int(roundf((max_corner[0] - inside_min[0]) / (inside_max[0] - inside_min[0]) * grid_res));
+    int y1 = int(roundf((max_corner[1] - inside_min[1]) / (inside_max[1] - inside_min[1]) * grid_res));
+    int z1 = int(roundf((max_corner[2] - inside_min[2]) / (inside_max[2] - inside_min[2]) * grid_res));
+    //printf("Voxel %d: (%d, %d, %d) to (%d, %d, %d), min: (%f, %f, %f), max: (%f, %f, %f), insidemin-max: (%f, %f)\n", i, x0, y0, z0, x1, y1, z1, min_corner[0], min_corner[1], min_corner[2], max_corner[0], max_corner[1], max_corner[2], inside_min[0], inside_min[1]);
+    //printf("Voxel %d, x0: %d x1: %d, min,max_corner: (%f, %f))")
     for (int xi = x0; xi < x1; ++xi) {
         for (int yi = y0; yi < y1; ++yi) {
             for (int zi = z0; zi < z1; ++zi) {

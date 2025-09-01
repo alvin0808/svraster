@@ -97,6 +97,27 @@ def exp_anneal(end_mul, iter_now, iter_from, iter_end):
     now_p = min(1.0, now_len / total_len)
     return end_mul ** now_p
 
+def normal_loss(pred_normal, gt_normal, mask=None):
+    """
+    pred_normal: [N, 3] 예측 normal
+    gt_normal:   [N, 3] GT normal
+    mask:        [N] optional, 유효한 영역 마스크
+    """
+
+    # L1 차이
+    diff = l1_loss(pred_normal, gt_normal)
+
+    # 정규화 내적 기반 loss
+    dot = (pred_normal * gt_normal).sum(dim=-1).clamp(-1, 1)
+    align_loss = l1_loss(dot, torch.ones_like(dot))
+
+    loss = diff + align_loss
+
+    if mask is not None:
+        loss = loss[mask]
+
+    return loss.mean()
+
 
 class SparseDepthLoss:
     def __init__(self, iter_end):

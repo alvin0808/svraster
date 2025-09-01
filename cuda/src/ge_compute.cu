@@ -89,7 +89,11 @@ __global__ void grid_eikonal_kernel(
 
     float grad_norm = sqrtf(dx_val*dx_val + dy_val*dy_val + dz_val*dz_val + 1e-8f);
     float grad_world = grad_norm * 0.5* vox_size_inv; //여기 0.5둬야 학습이 잘됨
-    float dL_dg = 2.0f * (grad_world - 1.0f) * weight;
+    float dL_dg = 0.0f;
+    if (grad_world < 0.8f || grad_world > 1.2f) {
+        dL_dg = 2.0f * (grad_world - 1.0f) * weight;
+    }
+    //float dL_dg = 2.0f * (grad_world - 1.0f) * weight;
 
     float dL_dx = dL_dg * dx_val / grad_norm * 0.5f*vox_size_inv;
     float dL_dy = dL_dg * dy_val / grad_norm * 0.5f*vox_size_inv;

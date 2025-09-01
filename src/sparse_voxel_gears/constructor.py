@@ -112,7 +112,7 @@ class SVConstructor:
             _geo_grid_pts = torch.full([self.num_grid_pts, 1], cfg_init.geo_init, dtype=torch.float32, device="cuda")
         elif mode ==1 : 
             _geo_grid_pts = (
-                torch.empty([self.num_grid_pts, 1], device="cuda").uniform_(0.78, 0.8)
+                torch.empty([self.num_grid_pts, 1], device="cuda").uniform_(1, 1.5)
             )
         else:
             # scene 중심에서의 거리 기반 SDF 초기화
@@ -133,7 +133,7 @@ class SVConstructor:
             _geo_grid_pts = torch.empty([self.num_grid_pts, 1], device="cuda")
 
             # inside는 중심 기준 음수 (f(x) < 0)
-            _geo_grid_pts = dist - self.inside_extent.item() / 3
+            _geo_grid_pts = -dist + self.inside_extent.item() / 4
 
             # outside는 큰 양수 값으로 (f(x) >> 0)
             #_geo_grid_pts[outside_mask] = torch.empty_like(dist[outside_mask]).uniform_(self.inside_extent.item()*0.617, self.inside_extent.item()*0.867)
@@ -156,6 +156,12 @@ class SVConstructor:
         self.bg_color = torch.tensor(
             [1, 1, 1] if self.white_background else [0, 0, 0],
             dtype=torch.float32, device="cuda")
+        print(self.bg_color)
+        print("vox_center:", self.vox_center)
+        print("vox_size:", self.vox_size)
+        print("scene_center:", self.scene_center)
+        print("inside_extent:", self.inside_extent)
+        print("init_n_level:", cfg_init.init_n_level)
         self.grid_mask, self.grid_keys, self.grid2voxel = octree_utils.update_valid_gradient_table(cfg_mode, self.vox_center, self.vox_size, self.scene_center, self.inside_extent, cfg_init.init_n_level)
     
 

@@ -9,12 +9,12 @@
 import os
 import random
 import numpy as np
-
+import yaml
 import torch
 
 from src.dataloader.reader_colmap_dataset import read_colmap_dataset
 from src.dataloader.reader_nerf_dataset import read_nerf_dataset
-
+from src.dataloader.reader_replica_dataset import read_replica_dataset
 from src.cameras import Camera, MiniCam
 
 AUTO_MAX_N_PIXELS = 1024 ** 2
@@ -46,11 +46,36 @@ class DataPack:
                 extension=cfg_data.extension,
                 test_every=cfg_data.test_every,
                 eval=cfg_data.eval)
+        elif cfg_data.source_path.endswith(".yaml") or cfg_data.source_path.endswith(".yml"):
+            print("Read dataset in Replica format.")
+            scene_info = read_replica_dataset(
+                cfg_yaml_path=cfg_data.source_path,
+                extension=cfg_data.extension
+            )
         else:
             raise Exception("Unknown scene type!")
 
         print(f"res_downscale={cfg_data.res_downscale}")
         print(f"res_width={cfg_data.res_width}")
+        with open(cfg_data.source_path) as f:
+            cfg = yaml.safe_load(f)
+
+        # === 2. Load inherited config (e.g., cfg/replica.yaml) ===
+        inherit_path = cfg["inherit_from"]
+        with open(inherit_path) as f:
+            inherit_cfg = yaml.safe_load(f)
+        #필요없는건 나중에 지울예정
+        self.every_frame = inherit_cfg["mapping"]["every_frame"]
+        self.vis_freq = inherit_cfg["mapping"]["vis_freq"]
+        self.vis_inside_freq = inherit_cfg["mapping"]["vis_inside_freq"]
+        self.mesh_freq = inherit_cfg["mapping"]["mesh_freq"]
+        self.ckpt_freq = inherit_cfg["mapping"]["ckpt_freq"]
+        self.keyframe_every = inherit_cfg["mapping"]["keyframe_every"]
+        self.mapping_window_size = inherit_cfg["mapping"]["mapping_window_size"]
+        self.pixels = inherit_cfg["mapping"]["pixels"]
+        self.iters_first = inherit_cfg["mapping"]["iters_first"]
+        self.iters = inherit_cfg["mapping"]["iters"]
+        '''
         if camera_params_only:
             self._cameras['train'][1.0] = CameraList(
                 scene_info.train_cam_infos, cfg_data, camera_params_only=True)
@@ -58,11 +83,22 @@ class DataPack:
                 scene_info.test_cam_infos, cfg_data, camera_params_only=True)
         else:
             for dataset_downscale in dataset_downscales:
+                print("1")
                 self._cameras['train'][dataset_downscale] = CameraList(
                     scene_info.train_cam_infos, cfg_data, dataset_downscale)
                 self._cameras['test'][dataset_downscale] = CameraList(
                     scene_info.test_cam_infos, cfg_data, dataset_downscale)
-
+        '''
+        if camera_params_only:
+            self.train_cam_infos = scene_info.train_cam_infos
+            self.test_cam_infos = scene_info.test_cam_infos
+        else:
+            for dataset_downscale in dataset_downscales:
+                self._cameras['train'][dataset_downscale] = CameraList([], cfg_data, dataset_downscale)
+                self._cameras['test'][dataset_downscale] = CameraList([], cfg_data, dataset_downscale)
+            self.train_stream = CameraStream(scene_info.train_cam_infos, cfg_data, self.every_frame)
+            self.test_stream = CameraStream(scene_info.test_cam_infos, cfg_data, self.every_frame)
+        print(f"store complete")
         self.has_depth = False
         self.has_mask = False
         for cams_split in self._cameras.values():
@@ -83,6 +119,7 @@ class DataPack:
             self.to_world_matrix = np.loadtxt(to_world_path)
 
         self.point_cloud = scene_info.point_cloud
+        
 
     def get_train_cameras(self, scale=1.0):
         return self._cameras['train'][scale]
@@ -105,22 +142,46 @@ def compute_iter_idx(num_data, num_iter):
         tr_iter_idx.extend(lst)
     return tr_iter_idx[:num_iter]
 
+class CameraStream:
+    def __init__(self, cam_infos, cfg_data, every_frame=5, dataset_downscale=1.0):
+        self.cam_infos = cam_infos
+        self.cfg_data = cfg_data
+        self.dataset_downscale = dataset_downscale
+        self.total = len(cam_infos)
+        self.idx = 0
+        self.every_frame = every_frame
+
+    def has_next(self):
+        return self.idx < self.total
+    def is_valid(self):
+        return self.idx < self.total and self.idx >= 0
+    def current(self):
+        if self.idx >= self.total:
+            raise StopIteration("No more cameras in the stream.")
+        return instantiate_a_camera(self.cam_infos[self.idx], self.cfg_data, self.dataset_downscale)
+    def next(self):
+        cam_info = self.cam_infos[self.idx]
+        self.idx += self.every_frame  # 50개마다 하나씩
+        return instantiate_a_camera(cam_info, self.cfg_data, self.dataset_downscale)
 
 class CameraList:
     def __init__(self, cam_infos, cfg_data, dataset_downscale=1.0, camera_params_only=False):
+        self.device = cfg_data.data_device
         if camera_params_only:
             self.camera_list = [
                 instantiate_a_minicamera(cam_info, cfg_data, dataset_downscale)
                 for cam_info in cam_infos
             ]
         else:
+            print("1")
             self.camera_list = [
                 instantiate_a_camera(cam_info, cfg_data, dataset_downscale)
                 for cam_info in cam_infos
             ]
             for i in range(len(cam_infos)):
                 self.camera_list[i] = self.camera_list[i].to(cfg_data.data_device)
-
+    def append(self, cam):
+        self.camera_list.append(cam.to(self.device))
     def __len__(self):
         return len(self.camera_list)
 

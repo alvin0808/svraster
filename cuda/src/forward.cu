@@ -366,7 +366,7 @@ renderCUDA(
             // Normal
             if (need_normal)
             {
-                if (density_mode == SDF_MODE && has_sdf0 && !has_norm)
+                if(0)// (density_mode == SDF_MODE && has_sdf0 && !has_norm)
                 {
                     float3 p_sdf0 = ro + sdf0_t * rd;  // 월드 좌표
                     float vox_l_inv = 1.f / vox_l;
@@ -398,7 +398,7 @@ renderCUDA(
                     N = grad * r;
                     has_norm = true;
                 }
-                if(density_mode != SDF_MODE || !has_norm)
+                if(1)//(density_mode != SDF_MODE || !has_norm)
                 {
                 const float lin_nx = (
                     (geo_params[0b100] + geo_params[0b101] + geo_params[0b110] + geo_params[0b111]) -

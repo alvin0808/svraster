@@ -17,7 +17,7 @@ cfg.model = CfgNode(dict(
     vox_geo_mode = "triinterp1",
     density_mode = "exp_linear_11",
     sh_degree = 3,
-    ss = 1.5,
+    ss = 1,
     outside_level = 5,  # Number of Octree level outside the main 3D region
     model_path = "",
     white_background = False,  # Assume known white bg color
@@ -36,6 +36,7 @@ cfg.data = CfgNode(dict(
     data_device = "cpu",
     eval = False,
     test_every = 8, # Only if dataset has no testset && eval=True
+    add_yaml = "",
 ))
 
 cfg.bounding = CfgNode(dict(
@@ -101,7 +102,7 @@ cfg.regularizer = CfgNode(dict(
     lambda_T_concen = 0.0,
 
     # Final transmittance should be 0
-    lambda_T_inside = 0.0,
+    lambda_T_inside = 0.01,
 
     # Per-point rgb loss
     lambda_R_concen = 0.01,
@@ -111,8 +112,8 @@ cfg.regularizer = CfgNode(dict(
     ascending_from = 0,
 
     # Distortion loss (encourage distribution concentration on ray)
-    lambda_dist = 0.1,
-    dist_from = 10000,
+    lambda_dist = 2.0,
+    dist_from = 0,
 
     # Consistency loss of rendered normal and derived normal from expected depth
     lambda_normal_dmean = 0.0,
@@ -155,8 +156,15 @@ cfg.regularizer = CfgNode(dict(
     ls_decay_mult = 1,
     ls_sparse = False,
 
+    lambda_depth = 1.0,
+    depth_loss_from = 0,
+    depth_loss_until = 20000,
+
+    lambda_normal = 0.0,
+    normal_loss_from = 1000,
+    normal_loss_until = 20000,
     # Data augmentation
-    ss_aug_max = 1.5,
+    ss_aug_max = 1,
     rand_bg = False,
 
 ))
