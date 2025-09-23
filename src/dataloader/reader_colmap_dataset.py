@@ -58,7 +58,7 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
         w2c[:3, :3] = qvec2rotmat(extr.qvec)
         w2c[:3, 3] = np.array(extr.tvec)
 
-        if intr.model == "SIMPLE_PINHOLE":
+        if intr.model == "SIMPLE_PINHOLE" or intr.model == "SIMPLE_RADIAL":
             focal_length_x = intr.params[0]
             fovx = focal2fov(focal_length_x, width)
             fovy = focal2fov(focal_length_x, height)
@@ -70,7 +70,7 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
         else:
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
-        image_path = os.path.join(images_folder, os.path.basename(extr.name))
+        image_path = os.path.join(images_folder, extr.name) #image_path = os.path.join(images_folder, os.path.basename(extr.name))
         if not os.path.isfile(image_path) and (image_path.endswith('jpg') or image_path.endswith('JPG')):
             image_path = image_path[:-3] + 'png'
         image_name = os.path.basename(image_path).split(".")[0]

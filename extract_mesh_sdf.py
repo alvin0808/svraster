@@ -239,13 +239,13 @@ def extract_mesh(args, data_pack, voxel_model, final_lv, crop_bbox, use_lv_avg, 
     mesh = trimesh.Trimesh(verts.cpu().numpy(), faces.cpu().numpy())
     return mesh
 
-def extract_mesh_sdf(args, data_pack, voxel_model, final_lv, crop_bbox, use_lv_avg, iso=0.0):
+def extract_mesh_sdf(args, voxel_model, final_lv, crop_bbox, use_lv_avg, iso=0.0):
     import torch
     import trimesh
     from tqdm import tqdm
 
     # --------------------------
-    # 1. Crop bounding box 필터링
+    # 1. Crop bounding box ?��?���?
     # --------------------------
     if crop_bbox is None:
         inside_min = voxel_model.scene_center - 0.5 * voxel_model.inside_extent * args.bbox_scale
@@ -270,12 +270,12 @@ def extract_mesh_sdf(args, data_pack, voxel_model, final_lv, crop_bbox, use_lv_a
     # 3. Grid 좌표 계산
     # --------------------------
     grid_pts_key, vox_key = octree_utils.build_grid_pts_link(octpath, octlevel)
-    #grid_pts_key -> n_grid개의 grid points에 대한 octree key
-    #vox_key -> n_voxel개의 voxel별 8개의 grid points 
+    #grid_pts_key -> n_grid개의 grid points?�� ????�� octree key
+    #vox_key -> n_voxel개의 voxel�? 8개의 grid points 
     grid_pts_xyz = octree_utils.compute_gridpoints_xyz(voxel_model.grid_pts_key, voxel_model.scene_center, voxel_model.scene_extent)
     
     # --------------------------
-    # 4. SDF corner value 추출 함수 정의
+    # 4. SDF corner value 추출 ?��?�� ?��?��
     # --------------------------
     grid_sdf_vals = voxel_model._geo_grid_pts
     print(f'[SDF] Grid points: {len(grid_pts_xyz)}')
@@ -304,7 +304,7 @@ def extract_mesh_sdf(args, data_pack, voxel_model, final_lv, crop_bbox, use_lv_a
             child_octpath, child_octlevel = octree_utils.gen_children(octpath[subdiv_idx], octlevel[subdiv_idx])
             child_unit_val = subdivide_by_interp(unit_val[subdiv_idx])
 
-            # merge + 재계산
+            # merge + ?��계산
             octpath = torch.cat([octpath[kept_idx], child_octpath])
             octlevel = torch.cat([octlevel[kept_idx], child_octlevel])
             unit_val = torch.cat([unit_val[kept_idx], child_unit_val])
@@ -465,7 +465,7 @@ if __name__ == "__main__":
     update_config(os.path.join(args.model_path, 'config.yaml'))
 
     # Load data
-    data_pack = DataPack(cfg.data, cfg.model.white_background)
+    #data_pack = DataPack(cfg.data, cfg.model.white_background)
 
     # Load model
     voxel_model = SparseVoxelModel(cfg.model)
@@ -502,7 +502,7 @@ if __name__ == "__main__":
             mesh = direct_mc(args, voxel_model, args.final_lv, crop_bbox)
             fname += f'_direct'
         elif voxel_model.density_mode == 'sdf':
-            mesh = extract_mesh_sdf(args, data_pack, voxel_model, args.final_lv, crop_bbox, use_lv_avg=False, iso=0.0)
+            mesh = extract_mesh_sdf(args, voxel_model, args.final_lv, crop_bbox, use_lv_avg=False, iso=0.0)
             fname += f'_lv{args.final_lv}_sdf_lv_avg'
         elif args.adaptive:
             mesh = extract_mesh(args, data_pack, voxel_model, args.final_lv, crop_bbox, args.use_lv_avg)
@@ -564,8 +564,8 @@ if __name__ == "__main__":
         mesh = trimesh.Trimesh(mesh.vertices, mesh.faces, vertex_colors=verts_color)
 
     # Transform to world coordinate
-    if data_pack.to_world_matrix is not None:
-        mesh = mesh.apply_transform(data_pack.to_world_matrix)
+    #if data_pack.to_world_matrix is not None:
+    #    mesh = mesh.apply_transform(data_pack.to_world_matrix)
 
     # Export mesh
     print(mesh)

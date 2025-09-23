@@ -96,18 +96,18 @@ def rasterize_voxels(
         raster_settings.debug,
     )
     #n_duplicates: [N], number of duplicates for each voxel
-    #geomBuffer: voxelì´ ì¹´ë©”ë¼ í”„ëŸ¬ìŠ¤í…€ì˜ ì–´ëŠ ì‚¬ë¶„ë©´ì— ì†í•˜ëŠ”ì§€, ë³µì…€ì˜ screen-space bounding box ì •ë³´ ë“±
+    #geomBuffer: voxel?´ ì¹´ë©”?¼ ?”„?Ÿ¬?Š¤????˜ ?–´?Š ?‚¬ë¶„ë©´?— ?†?•˜?Š”ì§?, ë³µì???˜ screen-space bounding box ? •ë³? ?“±
     in_frusts_idx = torch.where(n_duplicates > 0)[0] 
 
     # Forward voxel parameters
     cam_pos = raster_settings.c2w_matrix[:3, 3]
     vox_params = vox_fn(in_frusts_idx, cam_pos, raster_settings.color_mode)
-    #í˜„ìž¬ ì¹´ë©”ë¼ ë·°ì— ëŒ€í•´, ê° í™œì„±í™”ëœ voxelë“¤ì˜ geometry(geos)ì™€ ìƒ‰ìƒ(rgbs)ì„ ê³„ì‚°í•´ì„œ ë”•ì…”ë„ˆë¦¬ í˜•íƒœë¡œ ë„˜ê²¨ì£¼ëŠ” ì—­í• 
+    #?˜„?ž¬ ì¹´ë©”?¼ ë·°ì— ????•´, ê°? ?™œ?„±?™”?œ voxel?“¤?˜ geometry(geos)??? ?ƒ‰?ƒ(rgbs)?„ ê³„ì‚°?•´?„œ ?”•?…”?„ˆë¦? ?˜•?ƒœë¡? ?„˜ê²¨ì£¼?Š” ?—­?• 
     geos = vox_params['geos']
     rgbs = vox_params['rgbs']
     subdiv_p = vox_params['subdiv_p']
     log_s = vox_params['log_s']
-    log_s_clamped = torch.clamp(log_s, min=0.3)
+    #log_s_clamped = torch.clamp(log_s, min=0.3)
     s_val = torch.exp(log_s * 10.0)
     # Some voxel parameters checking
     if geos.shape != (N, 8):
@@ -291,7 +291,7 @@ class _RasterizeVoxels(torch.autograd.Function):
             dL_drgbs, # => rgbs
             None, # => vox_feats
             subdiv_p_bw, # => subdivision priority
-            dL_ds_val.view_as(s_val), # í™•ì •ì•„ë‹˜
+            dL_ds_val.view_as(s_val), # ?™•? •?•„?‹˜
         )
 
         return grads

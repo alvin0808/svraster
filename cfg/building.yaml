@@ -1,0 +1,26 @@
+data:
+  eval: False
+  res_downscale: 5.0
+
+model:
+  outside_level: 0
+
+init:
+  sh_degree_init: 3
+  outside_mode: uniform3
+
+bounding:
+  bound_mode: "forward"
+  forward_dist_scale: 0.3
+
+
+regularizer:
+  lambda_T_concen: 0.01 #0.01
+  lambda_R_concen: 0.1
+  lambda_ge_density: 1e-9
+  lambda_ls_density: 1e-9
+  ls_decay_every: 15000
+  ls_decay_mult: 4.0
+
+procedure:
+  subdivide_all_until: 0 

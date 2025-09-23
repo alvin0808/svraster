@@ -38,7 +38,7 @@ from src.utils.bounding_utils import decide_main_bounding
 from src.utils import mono_utils
 from src.utils import loss_utils
 from src.utils import octree_utils
-from src.dataloader.data_pack import DataPack, compute_iter_idx
+from src.dataloader.data_pack import DataPack, compute_iter_idx_sparse
 from src.sparse_voxel_model import SparseVoxelModel
 
 import svraster_cuda
@@ -50,7 +50,7 @@ def training(args):
 
     # Instantiate data loader
     tr_cams = data_pack.get_train_cameras()
-    tr_cam_indices = compute_iter_idx(len(tr_cams), cfg.procedure.n_iter) #data_pack.py -> compute_iter_idx 학습 iter수만큼 indices 생성
+    tr_cam_indices = compute_iter_idx_sparse(len(tr_cams), cfg.procedure.n_iter, 1) #data_pack.py -> compute_iter_idx
 
     if cfg.auto_exposure.enable:
         for cam in tr_cams:
@@ -60,7 +60,7 @@ def training(args):
     if cfg.regularizer.lambda_depthanythingv2:
         mono_utils.prepare_depthanythingv2(
             cameras=tr_cams,
-            source_path=cfg.data.source_path,
+            source_path=os.path.dirname(cfg.data.source_path), # modified
             force_rerun=False)
 
     if cfg.regularizer.lambda_mast3r_metric_depth:
@@ -75,13 +75,13 @@ def training(args):
         tr_cams=tr_cams,
         pcd=data_pack.point_cloud,  # Not used
         suggested_bounding=data_pack.suggested_bounding,  # Can be None
-    ) #  inner bounding box의 center와 radius를 결정하는 함수 5/7 
+    ) #  inner bounding box
     
 
     # Init voxel model
-    voxel_model = SparseVoxelModel(cfg.model) #본격적 으로 SparseVoxelModel을 생성하는 부분 
+    voxel_model = SparseVoxelModel(cfg.model)
     
-    if args.load_iteration: #중간저장된거 로드하는 경우
+    if args.load_iteration: 
         loaded_iter = voxel_model.load_iteration(args.load_iteration)
     else:
         loaded_iter = None
@@ -94,7 +94,7 @@ def training(args):
     first_iter = loaded_iter if loaded_iter else 1
     print(f"Start optmization from iters={first_iter}.") 
 
-    # Init optimizer 옵티마이저 초기화화
+    # Init optimizer
     voxel_model.optimizer_init(cfg.optimizer)
     if loaded_iter and args.load_optimizer:
         voxel_model.optimizer_load_iteration(loaded_iter)
@@ -118,23 +118,23 @@ def training(args):
     subdivide_scale = cfg.procedure.subdivide_target_scale ** (1 / remain_subdiv_times)
     subdivide_prop = max(0, (subdivide_scale - 1) / 7)
     print(f"Subdiv: times={remain_subdiv_times:2d} scale-each-time={subdivide_scale*100:.1f}% prop={subdivide_prop*100:.1f}%")
-    #Subdiv: times=15 scale-each-time=135.0% prop=5.0% 라고 뜨는거 보니
-    # 15번 subdivide를 해야하고, 매번 135%씩 scale을 늘려야 한다는 뜻인듯 #5/10
+    #Subdiv: times=15 scale-each-time=135.0% prop=5.0% 蹂대땲
+    # 15?占쏙옙 subdivide, 留ㅻ쾲 135% scale 利앾옙?? #5/10
     # Some other initialization
-    iter_start = torch.cuda.Event(enable_timing=True) #execute time 측정 in GPU
+    iter_start = torch.cuda.Event(enable_timing=True) #execute time 痢≪젙 in GPU
     iter_end = torch.cuda.Event(enable_timing=True)
     elapsed = 0 #elapsed time
 
     tr_render_opt = {
         'track_max_w': False, # track max_w for subdivision
-        'lambda_R_concen': cfg.regularizer.lambda_R_concen, # lambda_R_concen loss 
-        'output_T': False, # ray marching 중 누적 투과율 T
-        'output_depth': False, #true 이면 depth를 출력
+        'lambda_R_concen': cfg.regularizer.lambda_R_concen, # lambda_R_concen loss
+        'output_T': False, # ray marching 以묎컙 寃곌낵 異쒕젰 T
+        'output_depth': False, #true ?占쏙옙 depth 異쒕젰
         'ss': 1.0,  # disable supersampling at first super-sampling ratio
         'rand_bg': cfg.regularizer.rand_bg, # random background color
         'use_auto_exposure': cfg.auto_exposure.enable, # use auto exposure
     }
-    #조건부 활성화를 위해 아래와 같이 정의
+    #議곌굔占�?? ?占쏙옙?占쏙옙?占쏙옙 ?占쏙옙?占쏙옙 ?占쏙옙?占쏙옙
     sparse_depth_loss = loss_utils.SparseDepthLoss(
         iter_end=cfg.regularizer.sparse_depth_until)
     depthanythingv2_loss = loss_utils.DepthAnythingv2Loss(
@@ -157,15 +157,29 @@ def training(args):
     ema_loss_for_log = 0.0 #use for logging
     ema_psnr_for_log = 0.0 #use for logging
     iter_rng = range(first_iter, cfg.procedure.n_iter+1)
-    progress_bar = tqdm(iter_rng, desc="Training")   #10 iterations마다 processbar update
+    progress_bar = tqdm(iter_rng, desc="Training")   #10 iterations留덈떎 processbar update
     #parameters for eikonal loss
-    vox_size_min_inv = 1.0 / voxel_model.vox_size.min().item() #복셀의 최소 크기
-    #print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}") #복셀의 최소 크기
+    vox_size_min_inv = 1.0 / voxel_model.vox_size.min().item() #蹂듸옙?? 理쒖냼 ?占쏙옙占�?? ?占쏙옙?占쏙옙
+    #print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}") #蹂듸옙?? 理쒖냼 ?占쏙옙占�?? ?占쏙옙?占쏙옙
     max_voxel_level = voxel_model.octlevel.max().item()-cfg.model.outside_level
-    grid_voxel_coord = ((voxel_model.vox_center- voxel_model.vox_size * 0.5)-(voxel_model.scene_center-voxel_model.inside_extent*0.5))/voxel_model.inside_extent*(2**max_voxel_level) #복셀의 좌표
-    grid_voxel_size = (voxel_model.vox_size / voxel_model.inside_extent) * (2**max_voxel_level) #복셀의 크기
-    #print(f"grid_voxel_coord = {grid_voxel_coord}") #복셀의 좌표
-    #print(f"grid_voxel_size = {grid_voxel_size}") #복셀의 크기
+    grid_voxel_coord = ((voxel_model.vox_center- voxel_model.vox_size * 0.5)-(voxel_model.scene_center-voxel_model.inside_extent*0.5))/voxel_model.inside_extent*(2**max_voxel_level) #蹂듸옙?? 醫뚰몴
+    grid_voxel_size = (voxel_model.vox_size / voxel_model.inside_extent) * (2**max_voxel_level) #蹂듸옙?? ?占쏙옙占�??
+    #print(f"grid_voxel_coord = {grid_voxel_coord}") #蹂듸옙?? 醫뚰몴
+    #print(f"grid_voxel_size = {grid_voxel_size}") #蹂듸옙?? ?占쏙옙占�??
+
+    #initial the logs value, criteria=99% 
+    device = voxel_model._log_s.device
+    dtype  = voxel_model._log_s.dtype
+    learning_thickness = 2
+    vsmi = torch.as_tensor(vox_size_min_inv, device=device, dtype=dtype)
+    init = 0.1 * torch.log(
+        torch.log(torch.tensor(99.0, device=device, dtype=dtype)) * vsmi / learning_thickness/2
+    )
+
+    with torch.no_grad():
+        voxel_model._log_s.copy_(init)   # <<<< �옱諛붿씤�뵫 湲덉��! 媛믩쭔 蹂듭궗
+
+    print(f"log_s init = {voxel_model._log_s.item():.9f}")
     '''
     rand_idx = torch.randperm(len(voxel_model.grid_keys), device='cuda')[:10]
     for i in range(10):
@@ -174,11 +188,11 @@ def training(args):
         x= key %grid_res
         y= (key // grid_res) % grid_res
         z= key // (grid_res * grid_res)
-        print(f"grid_keys[{rand_idx[i]}] = {key} => ({x}, {y}, {z})") #grid_keys의 좌표 출력
-        voxel_coord = grid_voxel_coord[voxel_model.grid2voxel[rand_idx[i]]] #grid_voxel_coord에서 grid2voxel로 복셀 좌표를 얻음
-        print(f"grid_voxel_coord[{rand_idx[i]}] = {voxel_coord}") #복셀 좌표 출력
-        voxel_size = grid_voxel_size[voxel_model.grid2voxel[rand_idx[i]]] #grid_voxel_size에서 grid2voxel로 복셀 크기를 얻음
-        print(f"grid_voxel_size[{rand_idx[i]}] = {voxel_size}") #복
+        print(f"grid_keys[{rand_idx[i]}] = {key} => ({x}, {y}, {z})") #grid_keys?占쏙옙 醫뚰몴 異쒕젰
+        voxel_coord = grid_voxel_coord[voxel_model.grid2voxel[rand_idx[i]]] #grid_voxel_coord?占쏙옙?占쏙옙 grid2voxel占�??? 蹂듸옙?? 醫뚰몴占�??? ?占쏙옙?占쏙옙
+        print(f"grid_voxel_coord[{rand_idx[i]}] = {voxel_coord}") #蹂듸옙?? 醫뚰몴 異쒕젰
+        voxel_size = grid_voxel_size[voxel_model.grid2voxel[rand_idx[i]]] #grid_voxel_size?占쏙옙?占쏙옙 grid2voxel占�??? 蹂듸옙?? ?占쏙옙湲곤옙?? ?占쏙옙?占쏙옙
+        print(f"grid_voxel_size[{rand_idx[i]}] = {voxel_size}") #占�???
     '''
     for iteration in iter_rng:
 
@@ -203,6 +217,16 @@ def training(args):
             elif 'ss' in tr_render_opt:
                 tr_render_opt.pop('ss')  # Use default ss
 
+        #increase the std value
+        '''
+        first_prune = cfg.procedure.prune_from
+        prune_every = cfg.procedure.prune_every
+        std_increase_rate = 0.07/prune_every
+        if first_prune <= iteration <= (first_prune + prune_every*3):
+            with torch.no_grad():
+                voxel_model._log_s.add_(std_increase_rate)
+               ''' 
+
         need_sparse_depth = cfg.regularizer.lambda_sparse_depth > 0 and sparse_depth_loss.is_active(iteration)
         need_depthanythingv2 = cfg.regularizer.lambda_depthanythingv2 > 0 and depthanythingv2_loss.is_active(iteration)
         need_mast3r_metric_depth = cfg.regularizer.lambda_mast3r_metric_depth > 0 and mast3r_metric_depth_loss.is_active(iteration)
@@ -211,10 +235,10 @@ def training(args):
         tr_render_opt['output_T'] = cfg.regularizer.lambda_T_concen > 0 or cfg.regularizer.lambda_T_inside > 0 or cfg.regularizer.lambda_mask > 0 or need_sparse_depth or need_nd_loss or need_depthanythingv2 or need_mast3r_metric_depth
         tr_render_opt['output_normal'] = need_nd_loss or need_nmed_loss
         tr_render_opt['output_depth'] = need_sparse_depth or need_nd_loss or need_nmed_loss or need_depthanythingv2 or need_mast3r_metric_depth
-        #blending weight의 분포를 더 집중되게 유도
+        #blending weight 遺꾪룷占�?? 吏묒쨷?占쏙옙?占쏙옙占�?? ?占쏙옙?占쏙옙 ?占쏙옙?占쏙옙
         if iteration >= cfg.regularizer.dist_from and cfg.regularizer.lambda_dist:
             tr_render_opt['lambda_dist'] = cfg.regularizer.lambda_dist
-        #blending weight가 ray상에서 depth순서대로 증가하도록 유도
+        #blending weight ray 諛⑺뼢占�?? depth 諛⑺뼢?占쏙옙占�?? 利앷컯?占쏙옙占�?? ?占쏙옙?占쏙옙 ?占쏙옙?占쏙옙
         if iteration >= cfg.regularizer.ascending_from and cfg.regularizer.lambda_ascending:
             tr_render_opt['lambda_ascending'] = cfg.regularizer.lambda_ascending
 
@@ -233,7 +257,7 @@ def training(args):
         if cfg.regularizer.lambda_R_concen > 0:
             tr_render_opt['gt_color'] = gt_image
 
-        # Render 결과를 얻는 부분분
+        # Render 寃곌낵
         render_pkg = voxel_model.render(cam, **tr_render_opt)
         render_image = render_pkg['color'] #rendered image
 
@@ -248,33 +272,33 @@ def training(args):
             photo_loss = mse
         loss = cfg.regularizer.lambda_photo * photo_loss #1. mse loss
 
-        # if need_sparse_depth: #sparse depth loss 추가 실험용
+        # if need_sparse_depth: #sparse depth loss 異뷂옙??
         #     loss += cfg.regularizer.lambda_sparse_depth * sparse_depth_loss(cam, render_pkg)
 
-        if cfg.regularizer.lambda_mask: #추가 실험용
+        if cfg.regularizer.lambda_mask: #異뷂옙???占쏙옙?占쏙옙 留덉뒪?占쏙옙 ?占쏙옙?占쏙옙
             gt_T = 1 - cam.mask.cuda()
             loss += cfg.regularizer.lambda_mask * loss_utils.l2_loss(render_pkg['T'], gt_T)
 
-        # if need_depthanythingv2: #추가 실험용
-        #     loss += cfg.regularizer.lambda_depthanythingv2 * depthanythingv2_loss(cam, render_pkg, iteration)
+        if need_depthanythingv2: #異뷂옙???占쏙옙?占쏙옙 depthanythingv2 ?占쏙옙?占쏙옙
+            loss += cfg.regularizer.lambda_depthanythingv2 * depthanythingv2_loss(cam, render_pkg, iteration)
 
-        # if need_mast3r_metric_depth: #추가 실험용
+        # if need_mast3r_metric_depth: #異뷂옙???占쏙옙?占쏙옙 mast3r_metric_depth ?占쏙옙?占쏙옙
         #     loss += cfg.regularizer.lambda_mast3r_metric_depth * mast3r_metric_depth_loss(cam, render_pkg, iteration)
 
         if cfg.regularizer.lambda_ssim: #2. SSIM loss
             loss += cfg.regularizer.lambda_ssim * loss_utils.fast_ssim_loss(render_image, gt_image)
-        if cfg.regularizer.lambda_T_concen: #3. concentration Transmittance loss(final이 0or1)
+        if cfg.regularizer.lambda_T_concen: #3. concentration Transmittance loss
             loss += cfg.regularizer.lambda_T_concen * loss_utils.prob_concen_loss(render_pkg[f'raw_T'])
         if cfg.regularizer.lambda_T_inside: #to encourage T to be inside the bounding box
             loss += cfg.regularizer.lambda_T_inside * render_pkg[f'raw_T'].square().mean()
-        if need_nd_loss: #mesh 용도 normal dmean loss(인접 픽셀 뎁스차이로 구한 depth vs render_pkg['normal']->ray 내에서 weight rendering)
+        if need_nd_loss: #mesh normal dmean loss(援ы븳 depth vs render_pkg['normal']->ray 諛⑺뼢 weight rendering)
             loss += cfg.regularizer.lambda_normal_dmean * nd_loss(cam, render_pkg, iteration)
-        if need_nmed_loss: #mesh 용도 normal dmed loss(median depth vs render_pkg['normal']->ray 내에서 weight rendering)
+        if need_nmed_loss: #mesh normal dmed loss(median depth vs render_pkg['normal']->ray 諛⑺뼢 weight rendering)
             loss += cfg.regularizer.lambda_normal_dmed * nmed_loss(cam, render_pkg, iteration)
-        # lambda_R_concen loss는 render_opt에 넣어줘야함 (픽셀컬러랑 ray 복셀 컬러 차이 l2 loss)
-        # lambda_dist loss는 render_opt에 넣어줘야함 (ray에서 얼마나 density가 모여있는지)
-        # lambda_ascending loss는 render_opt에 넣어줘야함
-        # lambda tv loss는 voxel_model.optimizer.step() 이후에 적용해야함 (복셀간의 smoothness)
+        # lambda_R_concen loss? render_opt? 以섏빞? (而щ윭 ray 蹂듸옙?? 而щ윭 李⑥씠 l2 loss)
+        # lambda_dist loss? render_opt? 以섏빞? (ray 諛⑺뼢?占쏙옙占�?? ?占쏙옙留덈굹 density占�?? 紐⑥뿬?占쏙옙?占쏙옙占�??)
+        # lambda_ascending loss? render_opt? 以섏빞?
+        # lambda tv loss? voxel_model.optimizer.step() 以섏빞? (蹂듸옙?? 媛꾩쓽 smoothness)
         # Backward to get gradient of current iteration
         voxel_model.optimizer.zero_grad(set_to_none=True)
 
@@ -391,10 +415,10 @@ def training(args):
                 ori_lr = param_group["lr"]
                 param_group["lr"] *= cfg.optimizer.lr_decay_mult
                 print(f'LR decay of {param_group["name"]}: {ori_lr} => {param_group["lr"]}')
-            cfg.regularizer.lambda_vg_density *= cfg.optimizer.lr_decay_mult
-            cfg.regularizer.lambda_tv_density *= cfg.optimizer.lr_decay_mult
-            cfg.regularizer.lambda_ge_density *= cfg.optimizer.lr_decay_mult
-            cfg.regularizer.lambda_ls_density *= cfg.optimizer.lr_decay_mult
+            #cfg.regularizer.lambda_vg_density *= cfg.optimizer.lr_decay_mult
+            #cfg.regularizer.lambda_tv_density *= cfg.optimizer.lr_decay_mult
+            #cfg.regularizer.lambda_ge_density *= cfg.optimizer.lr_decay_mult
+            #cfg.regularizer.lambda_ls_density *= cfg.optimizer.lr_decay_mult
         '''
         if( cfg.model.density_mode == 'sdf' and iteration == 10000):
             cfg.regularizer.lambda_vg_density /= 10.0
@@ -408,8 +432,8 @@ def training(args):
             iteration >= 500 and \
             iteration <= cfg.procedure.subdivide_until)
         if need_stat:
-            voxel_model.subdiv_meta += voxel_model._subdiv_p.grad 
-            # 각 voxel마다 gradient 크기를 저장 -> subdivide할 때 사용
+            voxel_model.subdiv_meta += voxel_model._subdiv_p.grad
+            # 占�?? voxel留덈떎 gradient占�?? 紐⑥쑝占�?? ?占쏙옙?占쏙옙 ?占쏙옙?占쏙옙 -> subdivide ?占쏙옙 ?占쏙옙?占쏙옙
 
         ######################################################
         # Start adaptive voxels pruning and subdividing
@@ -432,9 +456,9 @@ def training(args):
         if need_pruning or need_subdividing:
             stat_pkg = voxel_model.compute_training_stat(camera_lst=tr_cams)
             torch.cuda.empty_cache()
-        # max_w = stat_pkg['max_w'] # 각 voxel마다 max weight를 저장 (T_i*a_i)
-        # min_samp_interval = stat_pkg['min_samp_interval'] # 각 voxel마다 min sampling interval을 저장 (T_i*a_i)
-        # view_cnt = stat_pkg['view_cnt'] # 각 voxel마다 view count를 저장
+        # max_w = stat_pkg['max_w'] # 媛� voxel留덈떎 max weight (T_i*a_i)
+        # min_samp_interval = stat_pkg['min_samp_interval'] # 媛� voxel留덈떎 min sampling interval (T_i*a_i)
+        # view_cnt = stat_pkg['view_cnt'] # 媛� voxel留덈떎 view count
         if need_pruning:
             ori_n = voxel_model.num_voxels
 
@@ -452,10 +476,15 @@ def training(args):
                 signs = (sdf_vals > 0).float()
                 has_surface = (signs.min(dim=1).values != signs.max(dim=1).values).view(-1)
 
-                min_abs_sdf = sdf_vals.abs().min(dim=1).values.view(-1)  # 각 복셀의 가장 가까운 꼭짓점 SDF 절댓값
+                min_abs_sdf = sdf_vals.abs().min(dim=1).values.view(-1)  # 媛� 蹂듭��留덈떎 媛��옣 媛�源뚯슫 SDF 媛�
                 global_vox_size_min = voxel_model.vox_size.min().item()
-                sdf_thresh = 3.5 * global_vox_size_min
-                # sdf_thresh 감소: 3000 → 15000에서 0.5 → 0.2
+                #sdf_thresh = learning_thickness*2 * global_vox_size_min
+                sdf_thresh = torch.log(torch.tensor(99.0, device=voxel_model._log_s.device)) / torch.exp(10 * voxel_model._log_s)
+                learning_thickness = sdf_thresh /2/global_vox_size_min
+                print(f"true_learning_thickness = {learning_thickness:.4f}")
+                sdf_thresh = max(3*global_vox_size_min, sdf_thresh.item())
+                print(f"augmented_learning_thickness = {sdf_thresh/global_vox_size_min/2:.4f}")
+                # sdf_thresh 媛먯냼: 3000 -> 15000 -> 0.5 -> 0.2
                 '''
                 start_iter = 3000
                 end_iter = 15000
@@ -470,7 +499,7 @@ def training(args):
             # Prune statistic (for the following subdivision)
             kept_idx = (~prune_mask).argwhere().squeeze(1)
             for k, v in stat_pkg.items():
-                stat_pkg[k] = v[kept_idx] #v는 원래 [N, 1]짜리였던 통계 tensor, 필터로 pruning
+                stat_pkg[k] = v[kept_idx] #v?占쏙옙 [N, 1]吏쒕━ tensor, pruning ?占쏙옙 ?占쏙옙?占쏙옙
 
             print(f"voxel_model._log_s = {voxel_model._log_s}")
 
@@ -484,7 +513,8 @@ def training(args):
             large_enough_mask = (voxel_model.vox_size * 0.5 > size_thres).squeeze(1)
             non_finest_mask = voxel_model.octlevel.squeeze(1) < svraster_cuda.meta.MAX_NUM_LEVELS 
             if cfg.model.density_mode == 'sdf':
-                non_finest_mask = voxel_model.octlevel.squeeze(1) < (svraster_cuda.meta.MAX_NUM_LEVELS-2)
+                non_finest_mask = voxel_model.octlevel.squeeze(1) < (svraster_cuda.meta.MAX_NUM_LEVELS-7- max(0, 3 - iteration // 3000)+cfg.model.outside_level)
+                #print(f"max octlevel for sdf: {svraster_cuda.meta.MAX_NUM_LEVELS-2- max(0, 3 - iteration // 3000)}")
             valid_mask = large_enough_mask & non_finest_mask
 
             # Get some statistic for subdivision priority
@@ -503,15 +533,15 @@ def training(args):
             # Compute subdivision mask
             
             subdivide_mask = (rank > thres) & valid_mask
-
-            if cfg.model.density_mode == 'sdf': #수정해라
+            
+            if cfg.model.density_mode == 'sdf': # SDF 紐⑤뱶?占쏙옙 ?占쏙옙
                 with torch.no_grad():
                     sdf_vals = voxel_model._geo_grid_pts[voxel_model.vox_key]  # [N, 8, 1]
                     signs = (sdf_vals > 0).float()
                     has_surface = (signs.min(dim=1).values != signs.max(dim=1).values).view(-1)
 
                 cur_level = voxel_model.octlevel.squeeze(1)
-                max_level = 9 +cfg.model.outside_level # 9 + 1 = 10
+                max_level = 9 +cfg.model.outside_level- max(0, 3 - iteration // 3000) # 9 + 1 = 10
                 under_level = cur_level < max_level
                 valid_mask = has_surface & under_level
 
@@ -529,8 +559,11 @@ def training(args):
                     subdivide_mask = torch.zeros_like(priority, dtype=torch.bool)
                     subdivide_mask[topk_abs_idx] = True
                 else:
-                    # 15k 이후는 조건에 맞는 모든 voxel subdivision
+                    # 15k iteration 議곌굔?占쏙옙 留뚯”?占쏙옙?占쏙옙 紐⑤뱺 voxel subdivision
                     subdivide_mask = valid_mask
+                if  iteration <= cfg.procedure.subdivide_all_until:
+                    subdivide_mask = under_level
+            
             print(f"voxel_model._log_s = {voxel_model._log_s}")
             # In case the number of voxels over the threshold
             max_n_subdiv = round((cfg.procedure.subdivide_max_num - voxel_model.num_voxels) / 7)
@@ -550,21 +583,23 @@ def training(args):
             remain_subdiv_times -= 1
             torch.cuda.empty_cache()
         if need_pruning or need_subdividing:
-            vox_size_min_inv = 1.0 / voxel_model.vox_size.min().item() #복셀의 최소 크기
-            #print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}") #복셀의 최소 크기
+            vox_size_min_inv = 1.0 / voxel_model.vox_size.min().item() 
+            #print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}")
             max_voxel_level = voxel_model.octlevel.max().item()-cfg.model.outside_level
-            grid_voxel_coord = ((voxel_model.vox_center- voxel_model.vox_size * 0.5)-(voxel_model.scene_center-voxel_model.inside_extent*0.5))/voxel_model.inside_extent*(2**max_voxel_level) #복셀의 좌표
-            grid_voxel_size = (voxel_model.vox_size / voxel_model.inside_extent) * (2**max_voxel_level) #복셀의 크기
-            #print(f"grid_voxel_coord = {grid_voxel_coord}") #복셀의 좌표
-            #print(f"grid_voxel_size = {grid_voxel_size}") #복셀의 크기
-            print(f'level max : {max_voxel_level}') #복셀의 최대 레벨
-            #print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}") #복셀의 최소 크기
+            grid_voxel_coord = ((voxel_model.vox_center- voxel_model.vox_size * 0.5)-(voxel_model.scene_center-voxel_model.inside_extent*0.5))/voxel_model.inside_extent*(2**max_voxel_level) #蹂듸옙???占쏙옙 醫뚰몴
+            grid_voxel_coord = torch.round(grid_voxel_coord).float()
+            grid_voxel_size = (voxel_model.vox_size / voxel_model.inside_extent) * (2**max_voxel_level) 
+            grid_voxel_size = torch.round(grid_voxel_size).float()
+            #print(f"grid_voxel_coord = {grid_voxel_coord}")
+            #print(f"grid_voxel_size = {grid_voxel_size}") 
+            print(f'level max : {max_voxel_level}') 
+            #print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}") 
 
             voxel_model.grid_mask, voxel_model.grid_keys, voxel_model.grid2voxel = octree_utils.update_valid_gradient_table(cfg.model.density_mode, voxel_model.vox_center, voxel_model.vox_size, voxel_model.scene_center, voxel_model.inside_extent, max_voxel_level)
             torch.cuda.synchronize()
 
             '''
-            print(f"voxel_model.grid_mask = {voxel_model.grid_mask}") #grid_mask 출력
+            print(f"voxel_model.grid_mask = {voxel_model.grid_mask}") #grid_mask 異쒕젰
             rand_idx = torch.randperm(len(voxel_model.grid_keys), device='cuda')[:10]
             grid_res = 2 ** max_voxel_level
             grid_mask = voxel_model.grid_mask
@@ -838,7 +873,7 @@ if __name__ == "__main__":
         cfg.init.geo_init = 0.0
         cfg.regularizer.dist_from = 10000
         cfg.regularizer.lambda_dist = 0.1
-        cfg.regularizer.lambda_tv_density = 1e-11
+        cfg.regularizer.lambda_tv_density = 0.0# 1e-11
         cfg.regularizer.tv_from = 0000
         cfg.regularizer.tv_until = 10000
         cfg.regularizer.lambda_vg_density =  0.0#1e-8
@@ -846,14 +881,14 @@ if __name__ == "__main__":
         cfg.regularizer.lambda_ascending = 0.0
         cfg.regularizer.ascending_from = 0
         cfg.regularizer.lambda_normal_dmean = 0.0
-        cfg.regularizer.n_dmean_from = 20000  # 이거 넣으면 터짐 왜지?
+        cfg.regularizer.n_dmean_from = 20000  # 
         cfg.regularizer.lambda_normal_dmed = 0.0
         cfg.regularizer.n_dmed_from = 10000
-        cfg.procedure.prune_from = 3000
-        cfg.procedure.prune_every = 3000
+        cfg.procedure.prune_from = 5000
+        cfg.procedure.prune_every = 1000
         cfg.procedure.prune_until = 14000
         cfg.procedure.subdivide_from = 3000
-        cfg.procedure.subdivide_every = 3000
+        cfg.procedure.subdivide_every = 1000
 
     # Global init
     seed_everything(cfg.procedure.seed)
@@ -898,7 +933,7 @@ if __name__ == "__main__":
             cfg.procedure[key] = round(cfg.procedure[key] * sche_mult)
         cfg.procedure.reset_sh_ckpt = [
             round(v * sche_mult) if v > 0 else v
-            for v in cfg.procedure.reset_sh_ckpt] #scale 조정
+            for v in cfg.procedure.reset_sh_ckpt] #scale 議곗젙
 
     # Update negative iterations
     for i in range(len(args.test_iterations)):

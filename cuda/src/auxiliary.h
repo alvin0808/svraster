@@ -350,9 +350,9 @@ __forceinline__ __device__ void tri_interp_grad_weight(
         for (int iy = 0; iy <= 1; ++iy) {
             for (int iz = 0; iz <= 1; ++iz) {
                 int idx = (ix << 2) | (iy << 1) | iz;
-                grad_interp_w[idx][0] = dx[ix] * wy[iy] * wz[iz]; // âˆ‚w/âˆ‚x
-                grad_interp_w[idx][1] = wx[ix] * dy[iy] * wz[iz]; // âˆ‚w/âˆ‚y
-                grad_interp_w[idx][2] = wx[ix] * wy[iy] * dz[iz]; // âˆ‚w/âˆ‚z
+                grad_interp_w[idx][0] = dx[ix] * wy[iy] * wz[iz]; // ?ˆ‚w/?ˆ‚x
+                grad_interp_w[idx][1] = wx[ix] * dy[iy] * wz[iz]; // ?ˆ‚w/?ˆ‚y
+                grad_interp_w[idx][2] = wx[ix] * wy[iy] * dz[iz]; // ?ˆ‚w/?ˆ‚z
             }
         }
     }
@@ -422,9 +422,13 @@ __forceinline__ __device__ float interpolate_sdf_and_grad(
 
     float sdf = 0.f;
     for (int i = 0; i < 8; ++i) {
-        if(weights_out[i]>1 || weights_out[i]<0) {
-            printf("Error: weight[%d] = %f is out of bounds [0, 1].\n", i, weights_out[i]);
-            return 0.0f;
+        if(weights_out[i]<0) {
+            weights_out[i] = 0;
+            //printf("Error: weight[%d] = %f is out of bounds [0, 1].\n", i, weights_out[i]);
+        }
+        if(weights_out[i]>1 ){
+            weights_out[i] = 1;
+            //printf("Error: weight[%d] = %f is out of bounds [0, 1].\n", i, weights_out[i]);
         }
         int pt_id = vox_key[voxel_id_out * 8 + i];
         if (pt_id < 0 || pt_id >= grid_pts_size) {
@@ -457,7 +461,7 @@ __forceinline__ __device__ float hash_to_float(uint32_t x) {
     x ^= x >> 15;
     x *= 0x31848bab;
     x ^= x >> 14;
-    return (x & 0xFFFFFF) / float(0x1000000);  // âˆˆ [0,1)
+    return (x & 0xFFFFFF) / float(0x1000000);  // ?ˆˆ [0,1)
 }
 __forceinline__ __device__ float3 get_rand_vec(int tid, int seed) {
     return make_float3(

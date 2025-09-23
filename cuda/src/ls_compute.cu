@@ -8,7 +8,7 @@
 namespace cg = cooperative_groups;
 
 namespace LS_COMPUTE {
-// 1. CUDA 커널
+// 1. CUDA kernel
 
 
 __global__ void grid_laplacian_kernel(
@@ -17,7 +17,7 @@ __global__ void grid_laplacian_kernel(
     const int32_t* __restrict__ grid_keys,    // [G]
     const int32_t* __restrict__ grid2voxel,   // [G]
     const int32_t grid_res,                       // grid resolution
-    const bool* __restrict__ grid_mask,       // [grid_res³]
+    const bool* __restrict__ grid_mask,       // [grid_res * grid_res * grid_res]
     const float* __restrict__ voxel_coords,   // [N, 3]
     const float* __restrict__ voxel_sizes,    // [N]
     const int M,                              // number of grid points
@@ -73,9 +73,9 @@ __global__ void grid_laplacian_kernel(
     float lap_residual = sqrtf(lap_residual_x * lap_residual_x +
                           lap_residual_y * lap_residual_y +
                           lap_residual_z * lap_residual_z + 1e-10f); // avoid division by zero
-    float size =  weight* 0.5*vox_size_inv*vox_size_inv;
-    
-    float dL_dx = 0.5 / lap_residual * 2* lap_residual_x * size; //어캐할지 고민
+    float additional_weight =(512.0f / grid_res);
+    float size =  weight* 0.5*vox_size_inv*vox_size_inv ; // 512/grid_res -> to balance different resolution
+    float dL_dx = 0.5 / lap_residual * 2* lap_residual_x * size; // gradient w.r.t. f(x+1) and f(x-1)
     float dL_dy = 0.5 / lap_residual * 2* lap_residual_y * size;
     float dL_dz = 0.5 / lap_residual * 2* lap_residual_z * size;
     float dL_dcenter = -2.0f * (dL_dx + dL_dy + dL_dz);
@@ -83,9 +83,9 @@ __global__ void grid_laplacian_kernel(
  
 
 
-    // float lap_residual = center_sdf - sdf_avg; // ∇²f ≈ f(x) - mean(neighbors)
+    // float lap_residual = center_sdf - sdf_avg; //  f(x) - mean(neighbors)
     // float dL_df = 2.0f * lap_residual * weight; // gradient w.r.t. f(x_i)
-
+        
     accumulate_grad(vox_id[0], num_voxels, vox_key, w[0], dL_dcenter/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]], grid_pts_grad);
     accumulate_grad(vox_id[1], num_voxels, vox_key, w[1], dL_dx/voxel_sizes[vox_id[1]]/voxel_sizes[vox_id[1]]/voxel_sizes[vox_id[0]], grid_pts_grad);
     accumulate_grad(vox_id[2], num_voxels, vox_key, w[2], dL_dx/voxel_sizes[vox_id[2]]/voxel_sizes[vox_id[2]]/voxel_sizes[vox_id[0]], grid_pts_grad);
@@ -93,11 +93,18 @@ __global__ void grid_laplacian_kernel(
     accumulate_grad(vox_id[4], num_voxels, vox_key, w[4], dL_dy/voxel_sizes[vox_id[4]]/voxel_sizes[vox_id[4]]/voxel_sizes[vox_id[0]], grid_pts_grad);
     accumulate_grad(vox_id[5], num_voxels, vox_key, w[5], dL_dz/voxel_sizes[vox_id[5]]/voxel_sizes[vox_id[5]]/voxel_sizes[vox_id[0]], grid_pts_grad);
     accumulate_grad(vox_id[6], num_voxels, vox_key, w[6], dL_dz/voxel_sizes[vox_id[6]]/voxel_sizes[vox_id[6]]/voxel_sizes[vox_id[0]], grid_pts_grad);
-    
-
+    /*
+    accumulate_grad(vox_id[0], num_voxels, vox_key, w[0], dL_dcenter, grid_pts_grad);
+    accumulate_grad(vox_id[1], num_voxels, vox_key, w[1], dL_dx, grid_pts_grad);
+    accumulate_grad(vox_id[2], num_voxels, vox_key, w[2], dL_dx, grid_pts_grad);
+    accumulate_grad(vox_id[3], num_voxels, vox_key, w[3], dL_dy, grid_pts_grad);
+    accumulate_grad(vox_id[4], num_voxels, vox_key, w[4], dL_dy, grid_pts_grad);
+    accumulate_grad(vox_id[5], num_voxels, vox_key, w[5], dL_dz, grid_pts_grad);
+    accumulate_grad(vox_id[6], num_voxels, vox_key, w[6], dL_dz, grid_pts_grad);
+        */
 }
 
-// 2. C++ 인터페이스
+// 2. C++ 
 void laplacian_smoothness_bw(
     const torch::Tensor& grid_pts,
     const torch::Tensor& vox_key,

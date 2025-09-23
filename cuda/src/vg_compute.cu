@@ -106,7 +106,7 @@ __global__ void voxel_gradient_kernel(
     int x = gk % grid_res;
     int y = (gk / grid_res) % grid_res;
     int z = gk / (grid_res * grid_res);
-    if (!grid_mask[gk] ) return;
+    if (!grid_mask[gk] ) return;   
     if ( x >= grid_res - 1 || y >= grid_res - 1 || z >= grid_res - 1)
         return;
     if(!(grid_mask[flatten_grid_key(x+1, y, z, grid_res)] && grid_mask[flatten_grid_key(x, y+1, z, grid_res)] &&grid_mask[flatten_grid_key(x, y, z+1, grid_res)]) )
@@ -172,7 +172,7 @@ __global__ void voxel_gradient_kernel(
 
 }
 
-// 2. C++ 인터페이스
+// 2. C++ 
 void voxel_gradient_bw(
     const torch::Tensor& grid_pts,
     const torch::Tensor& vox_key,

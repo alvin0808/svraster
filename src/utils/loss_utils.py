@@ -146,7 +146,7 @@ class DepthAnythingv2Loss:
             mono = torch.nn.functional.interpolate(
                 mono, size=invdepth.shape[-2:], mode='bilinear')
 
-        X, _, Xref = invdepth.split(1)
+        X, _, Xref, _= invdepth.split(1)
         X = X * alpha
         Y = mono
 

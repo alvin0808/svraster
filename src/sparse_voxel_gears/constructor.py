@@ -102,8 +102,8 @@ class SVConstructor:
 
         self.grid_pts_key, self.vox_key = octree_utils.build_grid_pts_link(self.octpath, self.octlevel)
         print("grid_pts size at initialisation:", self.num_grid_pts)
-        # vox_key:      [N, 8] -> 각 octree node에 해당하는 8개의 grid_pts index
-        # grid_pts_key: [M, 3] -> 각 grid_pts index의 위치 좌표
+        # vox_key:      [N, 8] -> The 8 grid_pts indices corresponding to each octree node
+        # grid_pts_key: [M, 3] -> The coordinates of each grid_pts index
         # num_grid_pts = 8 * len(self.octpath) = len(self.grid_pts_key)
 
         self.active_sh_degree = min(cfg_init.sh_degree_init, self.max_sh_degree)
@@ -115,10 +115,10 @@ class SVConstructor:
                 torch.empty([self.num_grid_pts, 1], device="cuda").uniform_(0.78, 0.8)
             )
         else:
-            # scene 중심에서의 거리 기반 SDF 초기화
+            # scene 
             #print("scene center:", self.scene_center.tolist())
             #print("scene extent:", self.scene_extent.tolist())
-            level = 16  # 상수 정의 (octree 최대 depth)
+            level = 16  #  (octree  depth)
             grid_pts_pos = self.grid_pts_key.float() / (1 << level)
             grid_pts_pos = grid_pts_pos * self.scene_extent + (self.scene_center - 0.5 * self.scene_extent)  # world coords
             #print("grid_pts_pos:", grid_pts_pos.shape, grid_pts_pos.min().item(), grid_pts_pos.max().item())
@@ -126,18 +126,18 @@ class SVConstructor:
             dist = torch.norm(grid_pts_pos - self.scene_center[None, :], dim=-1, keepdim=True)
             dist_max = dist.max().item()
             #print("Max distance from center at initialisation:", dist_max)
-            # dist: [M, 1] - 각 grid point가 scene center에서 얼마나 떨어져 있는지
-            inside_mask = (dist <= self.inside_extent.item() * 0.867)  # inside bound 내에 있는 포인트
+            # dist: [M, 1] - distance from grid point to scene center
+            inside_mask = (dist <= self.inside_extent.item() * 0.867)  # inside bound
             outside_mask = ~inside_mask
 
             _geo_grid_pts = torch.empty([self.num_grid_pts, 1], device="cuda")
 
-            # inside는 중심 기준 음수 (f(x) < 0)
-            _geo_grid_pts = dist - self.inside_extent.item() / 3
+            #inside(f(x) < 0)
+            _geo_grid_pts = (dist - self.inside_extent.item() / 5) 
 
-            # outside는 큰 양수 값으로 (f(x) >> 0)
-            #_geo_grid_pts[outside_mask] = torch.empty_like(dist[outside_mask]).uniform_(self.inside_extent.item()*0.617, self.inside_extent.item()*0.867)
-        # ->-10으로 초기화
+            #outside (f(x) >> 0)
+            _geo_grid_pts[outside_mask] = torch.empty_like(dist[outside_mask]).uniform_(self.inside_extent.item()*0.617, self.inside_extent.item()*0.867)
+        # 
         _rgb = torch.full([N, 3], cfg_init.sh0_init, dtype=torch.float32, device="cuda")
         _shs = torch.full([N, (self.max_sh_degree+1)**2 - 1, 3], cfg_init.shs_init, dtype=torch.float32, device="cuda")
 
@@ -186,7 +186,7 @@ def octlayout_filtering(octpath, octlevel, voxel_model, cameras=None, samp_mode=
     kept_mask = torch.ones([len(octpath)], dtype=torch.bool, device="cuda")
     if filter_zero_visiblity:
         kept_mask &= (rate > 0)
-    if filter_near > 0: #카메라랑 너무 가까운영역
+    if filter_near > 0: 
         is_near = svraster_cuda.renderer.mark_near(
             cameras, octpath, vox_center, vox_size, near=filter_near)
         kept_mask &= (~is_near)

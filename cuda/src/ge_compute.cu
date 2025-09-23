@@ -88,8 +88,10 @@ __global__ void grid_eikonal_kernel(
     float dz_val = (sdfs[4] - sdfs[5]) *0.5f;
 
     float grad_norm = sqrtf(dx_val*dx_val + dy_val*dy_val + dz_val*dz_val + 1e-8f);
-    float grad_world = grad_norm * 0.5* vox_size_inv; //여기 0.5둬야 학습이 잘됨
-    float dL_dg = 2.0f * (grad_world - 1.0f) * weight;
+    float grad_world = grad_norm * 0.5* vox_size_inv; // 0.5 -> if this exist the result refines I dont know why
+    float additional_weight =(512.0f / grid_res);
+    float dL_dg = 2.0f * (grad_world - 1.0f) * weight ; // 512/grid_res -> to balance different resolution
+    if (grad_norm <1.2f && grad_norm >0.8f) dL_dg = 0.0f; //0.8~1.2 no penalty
 
     float dL_dx = dL_dg * dx_val / grad_norm * 0.5f*vox_size_inv;
     float dL_dy = dL_dg * dy_val / grad_norm * 0.5f*vox_size_inv;
@@ -101,12 +103,18 @@ __global__ void grid_eikonal_kernel(
     accumulate_grad(vox_id[3], num_voxels,vox_key, w[3], -dL_dy/voxel_sizes[vox_id[3]]/voxel_sizes[vox_id[3]]/voxel_sizes[vox_id[3]], grid_pts_grad);
     accumulate_grad(vox_id[4], num_voxels,vox_key, w[4], dL_dz/voxel_sizes[vox_id[4]]/voxel_sizes[vox_id[4]]/voxel_sizes[vox_id[4]], grid_pts_grad);
     accumulate_grad(vox_id[5], num_voxels,vox_key, w[5], -dL_dz/voxel_sizes[vox_id[5]]/voxel_sizes[vox_id[5]]/voxel_sizes[vox_id[5]], grid_pts_grad);
-    
-
+    /*
+    accumulate_grad(vox_id[0], num_voxels, vox_key, w[0], dL_dx, grid_pts_grad);
+    accumulate_grad(vox_id[1], num_voxels,vox_key, w[1], -dL_dx, grid_pts_grad);
+    accumulate_grad(vox_id[2], num_voxels,vox_key, w[2], dL_dy, grid_pts_grad);
+    accumulate_grad(vox_id[3], num_voxels,vox_key, w[3], -dL_dy, grid_pts_grad);
+    accumulate_grad(vox_id[4], num_voxels,vox_key, w[4], dL_dz, grid_pts_grad);
+    accumulate_grad(vox_id[5], num_voxels,vox_key, w[5], -dL_dz, grid_pts_grad);
+    */
 
 }
 
-// 2. C++ 인터페이스
+// 2. C++ 
 void grid_eikonal_bw(
     const torch::Tensor& grid_pts,
     const torch::Tensor& vox_key,

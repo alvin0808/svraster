@@ -55,7 +55,7 @@ cfg.optimizer = CfgNode(dict(
     geo_lr = 0.025,
     sh0_lr = 0.010,
     shs_lr = 0.00025,
-    log_s_lr = 0.001, # osh ì•„ì§ í™•ì •ì•„ë‹˜
+    log_s_lr = 0.001, # osh ?•„ì§? ?™•? •?•„?‹˜
 
     optim_beta1 = 0.1,
     optim_beta2 = 0.99,
@@ -86,14 +86,14 @@ cfg.regularizer = CfgNode(dict(
 
     # Depthanything loss
     lambda_depthanythingv2 = 0.0,
-    depthanythingv2_from = 3000,
+    depthanythingv2_from = 30000,
     depthanythingv2_end = 20000,
     depthanythingv2_end_mult = 0.1,
 
     # Mast3r metrid loss
     lambda_mast3r_metric_depth = 0.0,
     mast3r_repo_path = '',
-    mast3r_metric_depth_from = 0,
+    mast3r_metric_depth_from = 3000,
     mast3r_metric_depth_end = 20000,
     mast3r_metric_depth_end_mult = 0.01,
 
@@ -148,11 +148,11 @@ cfg.regularizer = CfgNode(dict(
     ge_decay_mult = 1,
     ge_sparse = False,
 
-    lambda_ls_density = 1e-10,
-    ls_from = 00,
+    lambda_ls_density = 1e-8,
+    ls_from = 0,
     ls_until = 20000,
     ls_decay_every = 6000,
-    ls_decay_mult = 1,
+    ls_decay_mult = 1.0,
     ls_sparse = False,
 
     # Data augmentation
@@ -166,7 +166,7 @@ cfg.init = CfgNode(dict(
     geo_init = -10.0, 
     sh0_init = 0.5,
     shs_init = 0.0,
-    log_s_init = 0.2, #ìˆ˜ì •ì´ í•„ìš” í™•ì • ì•„ë‹˜
+    log_s_init = 0.3, #?ˆ˜? •?´ ?•„?š” ?™•? • ?•„?‹˜
 
     sh_degree_init = 3,
 
@@ -199,7 +199,7 @@ cfg.procedure = CfgNode(dict(
     prune_every = 1000,
     prune_until = 18000,
     prune_thres_init = 0.0001,
-    prune_thres_final = 0.05,
+    prune_thres_final = 0.03,
 
     # Adaptive voxel pruning
     subdivide_from = 1000,
