@@ -231,7 +231,7 @@ renderCUDA(
         for (int jj = 0; !done && jj <= j_lst_top; jj++)
         {
             int j = j_lst[jj];
-            const int vox_id = collected_vox_id[j]; //j번째 교차 voxel id
+            const int vox_id = collected_vox_id[j]; //j��° ���� voxel id
 
             // Keep track of current position in range.
             contributor_inc = j + 1;
@@ -289,8 +289,8 @@ renderCUDA(
                 float vox_l_inv = 1.f / vox_l;
                 const float step_sz = (b - a) * (1.f / n_samp);
                 const float3 step = step_sz * rd;
-                float3 pt = ro + (a + 0.5f * step_sz) * rd; //sample 지점의 월드 좌표
-                float3 qt = (pt - (vox_c - 0.5f * vox_l)) * vox_l_inv; // sample 지점의 voxel 좌표
+                float3 pt = ro + (a + 0.5f * step_sz) * rd; //sample ������ ���� ��ǥ
+                float3 qt = (pt - (vox_c - 0.5f * vox_l)) * vox_l_inv; // sample ������ voxel ��ǥ
                 const float3 qt_step = step * vox_l_inv;
                 #pragma unroll
                 for (int k=0; k<n_samp; k++, qt=qt+qt_step)
@@ -342,7 +342,7 @@ renderCUDA(
                     float t0 = a + 0.5f * step_sz;
                     float t1 = a + 1.5f * step_sz;
                     dval = a0*t0 + (1.f-a0)*a1*t1;
-                    // sdf 모드로도 수정해야됨
+                    // sdf ���ε� �����ؾߵ�
                 }
                 else
                 {
@@ -366,9 +366,9 @@ renderCUDA(
             // Normal
             if (need_normal)
             {
-                if (density_mode == SDF_MODE && has_sdf0 && !has_norm)
+                if (false)//(density_mode == SDF_MODE && has_sdf0 && !has_norm)
                 {
-                    float3 p_sdf0 = ro + sdf0_t * rd;  // 월드 좌표
+                    float3 p_sdf0 = ro + sdf0_t * rd;  // ���� ��ǥ
                     float vox_l_inv = 1.f / vox_l;
                     float3 qt_sdf0 = (p_sdf0 - (vox_c - 0.5f * vox_l)) * vox_l_inv;
 
@@ -398,7 +398,7 @@ renderCUDA(
                     N = grad * r;
                     has_norm = true;
                 }
-                if(density_mode != SDF_MODE || !has_norm)
+                if(true)//(density_mode != SDF_MODE || !has_norm)
                 {
                 const float lin_nx = (
                     (geo_params[0b100] + geo_params[0b101] + geo_params[0b110] + geo_params[0b111]) -
@@ -500,7 +500,7 @@ renderCUDA(
             out_normal[2 * H * W + pix_id] = N.z;
         }
         if (density_mode == SDF_MODE && has_sdf0)
-            out_sdf0[pix_id] = sdf0_t;  // ray 방향으로의 거리
+            out_sdf0[pix_id] = sdf0_t;  // ray ���������� �Ÿ�
         else
             out_sdf0[pix_id] = -1.f;
         atomicMax(tile_last + tile_id, range.x + last_contributor);
@@ -635,7 +635,7 @@ void render(
         ) :
     (density_mode == DENSITY_SDF) ?
         FwRendFunc(2, DENSITY_SDF):
-        FwRendFunc(2, DENSITY_SDF); //무조건 이렇게
+        FwRendFunc(2, DENSITY_SDF); //������ �̷���
 
     kernel_func <<<tile_grid, block>>> (
         ranges,
@@ -770,7 +770,7 @@ __global__ void identifyTileRanges(int L, uint64_t* vox_list_keys, uint2* ranges
     if (idx == L - 1)
         ranges[currtile].y = L;
 }
-// 5/15 여기를 바꿔야됨 ㅠㅜ
+// 5/15 ���⸦ �ٲ�ߵ� �Ф�
 // Mid-level C interface for the entire rasterization procedure.
 int rasterize_voxels_procedure( 
     char* geom_buffer,
@@ -882,7 +882,7 @@ int rasterize_voxels_procedure(
     }
 
     // Let each tile blend its range of voxels independently in parallel.
-    render( //여기를 바꿔야 ㅠ
+    render( //���⸦ �ٲ�� ��
         tile_grid, block,
         imgState.ranges,
         binningState.vox_list,

@@ -18,9 +18,9 @@ regularizer:
   lambda_T_concen: 0.01 #0.01
   lambda_R_concen: 0.1
   lambda_ge_density: 1e-9
-  lambda_ls_density: 1e-9
+  lambda_ls_density: 1e-10
   ls_decay_every: 15000
-  ls_decay_mult: 4.0
+  ls_decay_mult: 1
 
 procedure:
   subdivide_all_until: 0 

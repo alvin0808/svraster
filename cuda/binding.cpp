@@ -19,6 +19,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include "src/tv_compute.h"
 #include "src/ge_compute.h"
 #include "src/ls_compute.h"
+#include "src/pl_compute.h"
 #include "src/geo_params_gather.h"
 #include "src/utils.h"
 #include "src/adam_step.h"
@@ -43,6 +44,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("voxel_gradient_bw", &VG_COMPUTE::voxel_gradient_bw);
     m.def("grid_eikonal_bw", &GE_COMPUTE::grid_eikonal_bw);
     m.def("laplacian_smoothness_bw", &LS_COMPUTE::laplacian_smoothness_bw);
+    m.def("points_loss_bw", &PL_COMPUTE::points_loss_bw);
 
     m.def("is_in_cone", &UTILS::is_in_cone);
     m.def("compute_rd", &UTILS::compute_rd);

@@ -89,13 +89,14 @@ for scene in os.listdir(args.dataset_root):
         frame = {
             "file_path": 'image/' + stem,
             "mask_path": f'mask/{int(stem):03d}.png',
+            "normal_path": f'normal/{int(stem):03d}.png',
             "camera_angle_x": camera_angle_x,
             "camera_angle_y": camera_angle_y,
             "cx_p": cx / w,
             "cy_p": cy / h,
             "transform_matrix": c2w.tolist()
         }
-        if idx % 8 == 0:
+        if idx % 8 == 9:
             test['frames'].append(frame)
         else:
             train['frames'].append(frame)

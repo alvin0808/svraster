@@ -12,7 +12,7 @@ import numpy as np
 from lpips import LPIPS
 from pytorch_msssim import SSIM
 from fused_ssim import fused_ssim
-
+import torch.nn.functional as F
 
 metric_networks = {}
 
@@ -271,3 +271,45 @@ class NormalMedianConsistencyLoss:
         loss_map = (1 - (render_normal * N_med).sum(dim=0)) * mask
         loss = loss_map.mean()
         return loss
+
+class Pi3NormalLoss:
+    def __init__(self, iter_from, iter_end):
+        self.iter_from = iter_from
+        self.iter_end = iter_end
+
+    def is_active(self, iteration):
+        return iteration >= self.iter_from and iteration <= self.iter_end
+
+    def __call__(self, cam, render_pkg, iteration):
+        assert "raw_normal" in render_pkg, "Forgot to set `output_normal=True` when calling render?"
+
+        if not self.is_active(iteration):
+            return 0
+        gt = cam.normal              # [3,H,W]
+        pred = render_pkg["raw_normal"]  # [3,H,W]
+        device = pred.device
+
+        if gt is None:
+            return torch.tensor(0.0, device=device)
+        
+        Hp, Wp = pred.shape[-2], pred.shape[-1]
+        Hg, Wg = gt.shape[-2], gt.shape[-1]
+        if (Hg, Wg) != (Hp, Wp):
+            gt = F.interpolate(gt.unsqueeze(0), size=(Hp, Wp),
+                               mode='bilinear', align_corners=False).squeeze(0)
+        
+
+
+        gt = gt.to(device)
+
+        gt = F.normalize(gt, dim=0, eps=1e-8)
+        pred = F.normalize(pred, dim=0, eps=1e-8)
+
+        valid = (gt.abs().sum(dim=0) > 0)
+        if valid.sum() == 0:
+            return torch.tensor(0.0, device=device)
+
+        cos = (pred * gt).sum(dim=0).clamp(-1.0, 1.0)  # [H,W]
+        loss = (1.0 - cos)[valid].mean()
+        return loss
+        

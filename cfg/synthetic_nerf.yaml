@@ -21,5 +21,5 @@ init:
   sh_degree_init: 1
 
 procedure:
-  subdivide_all_until: 00 # 1000Subdivide all at the first time
+  subdivide_all_until: 2000 # 1000Subdivide all at the first time
   subdivide_samp_thres: 0.5  # Enable smaller voxels

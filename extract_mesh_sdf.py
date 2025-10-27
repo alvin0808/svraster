@@ -245,7 +245,7 @@ def extract_mesh_sdf(args, voxel_model, final_lv, crop_bbox, use_lv_avg, iso=0.0
     from tqdm import tqdm
 
     # --------------------------
-    # 1. Crop bounding box ?��?���?
+    # 1. Crop bounding box ?��?���??
     # --------------------------
     if crop_bbox is None:
         inside_min = voxel_model.scene_center - 0.5 * voxel_model.inside_extent * args.bbox_scale
@@ -271,7 +271,7 @@ def extract_mesh_sdf(args, voxel_model, final_lv, crop_bbox, use_lv_avg, iso=0.0
     # --------------------------
     grid_pts_key, vox_key = octree_utils.build_grid_pts_link(octpath, octlevel)
     #grid_pts_key -> n_grid개의 grid points?�� ????�� octree key
-    #vox_key -> n_voxel개의 voxel�? 8개의 grid points 
+    #vox_key -> n_voxel개의 voxel�?? 8개의 grid points 
     grid_pts_xyz = octree_utils.compute_gridpoints_xyz(voxel_model.grid_pts_key, voxel_model.scene_center, voxel_model.scene_extent)
     
     # --------------------------
@@ -465,7 +465,7 @@ if __name__ == "__main__":
     update_config(os.path.join(args.model_path, 'config.yaml'))
 
     # Load data
-    #data_pack = DataPack(cfg.data, cfg.model.white_background)
+    data_pack = DataPack(cfg.data, cfg.model.white_background)
 
     # Load model
     voxel_model = SparseVoxelModel(cfg.model)
@@ -564,8 +564,8 @@ if __name__ == "__main__":
         mesh = trimesh.Trimesh(mesh.vertices, mesh.faces, vertex_colors=verts_color)
 
     # Transform to world coordinate
-    #if data_pack.to_world_matrix is not None:
-    #    mesh = mesh.apply_transform(data_pack.to_world_matrix)
+    if data_pack.to_world_matrix is not None:
+        mesh = mesh.apply_transform(data_pack.to_world_matrix)
 
     # Export mesh
     print(mesh)

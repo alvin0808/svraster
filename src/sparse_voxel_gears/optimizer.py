@@ -18,7 +18,7 @@ class SVOptimizer:
             {'params': [self._sh0], 'lr': cfg_optimizer.sh0_lr, "name": "_sh0"},
             {'params': [self._shs], 'lr': cfg_optimizer.shs_lr, "name": "_shs"},
             {'params': [self._subdiv_p], 'lr': 0.0, "name": "_subdiv_p"},
-            {'params': [self._log_s], 'lr': cfg_optimizer.log_s_lr, "name": "log_s"}, #cfg_optimizer.log_s_lr
+            {'params': [self._log_s], 'lr': 0.0, "name": "log_s"}, #cfg_optimizer.log_s_lr
         ]
 
         self.optimizer = SparseAdam(

@@ -138,7 +138,7 @@ class Camera(CameraBase):
             self, image_name,
             w2c, fovx, fovy, cx_p, cy_p,
             near=0.02,
-            image=None, mask=None, depth=None,
+            image=None, mask=None, depth=None, normal=None,
             sparse_pt=None):
 
         self.image_name = image_name
@@ -164,7 +164,7 @@ class Camera(CameraBase):
         # Load mask and depth if there are
         self.mask = mask.cpu() if mask is not None else None
         self.depth = depth.cpu() if depth is not None else None
-
+        self.normal = normal.cpu() if normal is not None else None
         # Load sparse depth
         if sparse_pt is not None:
             self.sparse_pt = torch.tensor(sparse_pt, dtype=torch.float32, device="cpu")
@@ -177,6 +177,8 @@ class Camera(CameraBase):
             self.mask = self.mask.to(device)
         if self.depth is not None:
             self.depth = self.depth.to(device)
+        if self.normal is not None:
+            self.normal = self.normal.to(device)
         return self
 
     def auto_exposure_init(self):

@@ -11,7 +11,7 @@
 
 import PIL
 import numpy as np
-from typing import List, NamedTuple
+from typing import Dict, List, NamedTuple
 
 class CameraInfo(NamedTuple):
     image_name: str
@@ -32,6 +32,8 @@ class CameraInfo(NamedTuple):
     image_path: str = ""
     depth: PIL.Image.Image = None
     depth_path: str = ""
+    normal: PIL.Image.Image = None
+    normal_path: str = ""
     mask: PIL.Image.Image = None
     mask_path: str = ""
 
@@ -44,9 +46,14 @@ class PointCloud(NamedTuple):
     normals : np.array
     ply_path: str
 
+class SFMInitData(NamedTuple):
+    points_xyz: np.array
+    index_to_point_id: np.array
+    point_id_to_image_ids: Dict[int, np.array]
 
 class SceneInfo(NamedTuple):
     train_cam_infos: List[CameraInfo]
     test_cam_infos: List[CameraInfo]
     suggested_bounding: np.array
     point_cloud: PointCloud
+    sfm_init_data: SFMInitData = None

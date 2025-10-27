@@ -31,3 +31,7 @@ def laplacian_smoothness(grid_pts, vox_key, grid_voxel_coord, grid_voxel_size, g
     assert len(vox_key.shape) == 2 and vox_key.shape[1] == 8
     _C.laplacian_smoothness_bw(grid_pts, vox_key, grid_voxel_coord, grid_voxel_size, grid_res, grid_mask, grid_keys, grid2voxel, weight, vox_size_inv, no_tv_s, tv_sparse, grid_pts_grad)
     
+def points_loss(points_in_grid, grid_pts, vox_key, grid_voxel_coord,grid_voxel_size,grid_res, grid_mask, grid_keys, grid2voxel, weight, vox_size_inv, no_tv_s,tv_sparse,grid_pts_grad):
+    assert grid_pts.shape == grid_pts_grad.shape
+    assert len(vox_key.shape) == 2 and vox_key.shape[1] == 8
+    _C.points_loss_bw(points_in_grid, grid_pts, vox_key, grid_voxel_coord,grid_voxel_size,grid_res, grid_mask, grid_keys, grid2voxel, weight, vox_size_inv, no_tv_s,tv_sparse,grid_pts_grad)

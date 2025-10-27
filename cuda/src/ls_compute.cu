@@ -29,7 +29,7 @@ __global__ void grid_laplacian_kernel(
 ){
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     if (tid >= M) return;
-    if(voxel_sizes[grid2voxel[tid]] > 2.0f) return;
+    //if(voxel_sizes[grid2voxel[tid]] > 2.0f) return;
     int gk = grid_keys[tid];
     int x = gk % grid_res;
     int y = (gk / grid_res) % grid_res;
@@ -85,7 +85,7 @@ __global__ void grid_laplacian_kernel(
 
     // float lap_residual = center_sdf - sdf_avg; //  f(x) - mean(neighbors)
     // float dL_df = 2.0f * lap_residual * weight; // gradient w.r.t. f(x_i)
-        
+    /*
     accumulate_grad(vox_id[0], num_voxels, vox_key, w[0], dL_dcenter/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]], grid_pts_grad);
     accumulate_grad(vox_id[1], num_voxels, vox_key, w[1], dL_dx/voxel_sizes[vox_id[1]]/voxel_sizes[vox_id[1]]/voxel_sizes[vox_id[0]], grid_pts_grad);
     accumulate_grad(vox_id[2], num_voxels, vox_key, w[2], dL_dx/voxel_sizes[vox_id[2]]/voxel_sizes[vox_id[2]]/voxel_sizes[vox_id[0]], grid_pts_grad);
@@ -93,7 +93,8 @@ __global__ void grid_laplacian_kernel(
     accumulate_grad(vox_id[4], num_voxels, vox_key, w[4], dL_dy/voxel_sizes[vox_id[4]]/voxel_sizes[vox_id[4]]/voxel_sizes[vox_id[0]], grid_pts_grad);
     accumulate_grad(vox_id[5], num_voxels, vox_key, w[5], dL_dz/voxel_sizes[vox_id[5]]/voxel_sizes[vox_id[5]]/voxel_sizes[vox_id[0]], grid_pts_grad);
     accumulate_grad(vox_id[6], num_voxels, vox_key, w[6], dL_dz/voxel_sizes[vox_id[6]]/voxel_sizes[vox_id[6]]/voxel_sizes[vox_id[0]], grid_pts_grad);
-    /*
+    */
+    
     accumulate_grad(vox_id[0], num_voxels, vox_key, w[0], dL_dcenter, grid_pts_grad);
     accumulate_grad(vox_id[1], num_voxels, vox_key, w[1], dL_dx, grid_pts_grad);
     accumulate_grad(vox_id[2], num_voxels, vox_key, w[2], dL_dx, grid_pts_grad);
@@ -101,7 +102,8 @@ __global__ void grid_laplacian_kernel(
     accumulate_grad(vox_id[4], num_voxels, vox_key, w[4], dL_dy, grid_pts_grad);
     accumulate_grad(vox_id[5], num_voxels, vox_key, w[5], dL_dz, grid_pts_grad);
     accumulate_grad(vox_id[6], num_voxels, vox_key, w[6], dL_dz, grid_pts_grad);
-        */
+    
+        
 }
 
 // 2. C++ 

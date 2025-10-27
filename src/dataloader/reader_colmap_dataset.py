@@ -25,7 +25,7 @@ from PIL import Image
 from pathlib import Path
 
 from src.utils.camera_utils import focal2fov
-from .reader_scene_info import CameraInfo, PointCloud, SceneInfo
+from .reader_scene_info import CameraInfo, PointCloud, SceneInfo, SFMInitData
 from .colmap_loader import read_extrinsics_text, read_intrinsics_text, \
                            read_extrinsics_binary, read_intrinsics_binary, \
                            read_points3D_binary, read_points3D_text, \
@@ -70,15 +70,50 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
         else:
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
-        image_path = os.path.join(images_folder, extr.name) #image_path = os.path.join(images_folder, os.path.basename(extr.name))
+        image_path = os.path.join(images_folder, os.path.basename(extr.name)) #image_path = os.path.join(images_folder, extr.name) #
         if not os.path.isfile(image_path) and (image_path.endswith('jpg') or image_path.endswith('JPG')):
             image_path = image_path[:-3] + 'png'
         image_name = os.path.basename(image_path).split(".")[0]
         image = Image.open(image_path)
 
         # No mask to load
-        mask_path = ""
-        mask = None
+        #mask_path = ""
+        #mask = None
+
+        scene_dir  = os.path.dirname(images_folder)
+        masks_dir  = os.path.join(scene_dir, "mask")
+
+        def find_mask_path(image_path: str, masks_dir: str) -> str | None:
+            if not os.path.isdir(masks_dir):
+                return None
+            base = os.path.basename(image_path)
+            stem, ext = os.path.splitext(base)  
+            mask_stem = stem[3:] if stem.startswith("000") else stem
+
+            exts = [ext] if ext.lower() in {".png", ".jpg", ".jpeg"} else []
+            exts += [".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG"]
+            seen = set()
+            candidates = []
+            for e in exts:
+                if e not in seen:
+                    seen.add(e)
+                    candidates.append(os.path.join(masks_dir, mask_stem + e))
+
+            for p in candidates:
+                if os.path.isfile(p):
+                    return p
+            return None
+
+        mpath = find_mask_path(image_path, masks_dir)
+        if mpath is not None:
+            mask_path = mpath
+            mask = Image.open(mpath)  # 0..255 (필요하면 나중 단계에서 이진화)
+        else:
+            mask_path = ""
+            mask = None
+
+
+
 
         # Load depth if there is
         if depth_paths:
@@ -115,8 +150,10 @@ def read_colmap_dataset(path, images, eval, test_every=8, depth_paths=""):
     if not os.path.exists(sparse_path):
         sparse_path = os.path.join(path, "colmap", "sparse", "0")
     if not os.path.exists(sparse_path):
+        sparse_path = os.path.join(path, "sparse")
+    if not os.path.exists(sparse_path):
         raise Exception("Can not find COLMAP outcome.")
-
+    sfm_data = None
     # Parse cameras
     try:
         cameras_extrinsic_file = os.path.join(sparse_path, "images.bin")
@@ -136,6 +173,20 @@ def read_colmap_dataset(path, images, eval, test_every=8, depth_paths=""):
         colors=colors,
         normals=normals,
         ply_path=ply_path)
+    points3d_txt_path = os.path.join(sparse_path, "points3D.txt")
+    if os.path.exists(points3d_txt_path):
+        sfm_xyz, idx_to_pid, pid_to_img_ids = read_points3D_text(points3d_txt_path)
+        sfm_data = SFMInitData(
+            points_xyz=sfm_xyz,
+            index_to_point_id=idx_to_pid,
+            point_id_to_image_ids=pid_to_img_ids
+        )
+    else:
+        sfm_data = SFMInitData(
+            points_xyz=points,
+            index_to_point_id=None,
+            point_id_to_image_ids=None
+        )
 
     # Load cameras
     image_dir = "images" if images is None else images
@@ -173,5 +224,7 @@ def read_colmap_dataset(path, images, eval, test_every=8, depth_paths=""):
         train_cam_infos=train_cam_infos,
         test_cam_infos=test_cam_infos,
         suggested_bounding=suggested_bounding,
-        point_cloud=point_cloud)
+        point_cloud=point_cloud,
+        sfm_init_data=sfm_data
+    )
     return scene_info

@@ -8,7 +8,7 @@
 from setuptools import setup
 
 def build_setup():
-    from torch.utils.cpp_extension import BuildExtension, CUDAExtension  # 이 안에서 import
+    from torch.utils.cpp_extension import BuildExtension, CUDAExtension  
     import torch
 
     setup(
@@ -28,6 +28,7 @@ def build_setup():
                     "src/vg_compute.cu",
                     "src/ge_compute.cu",
                     "src/ls_compute.cu",
+                    "src/pl_compute.cu",
                     "src/utils.cu",
                     "src/adam_step.cu",
                     "binding.cpp"

@@ -24,8 +24,8 @@ from PIL import Image
 from pathlib import Path
 
 from src.utils.camera_utils import fov2focal, focal2fov
-from .colmap_loader import fetchPly
-from .reader_scene_info import CameraInfo, PointCloud, SceneInfo
+from .colmap_loader import fetchPly, read_points3d_text_optimized
+from .reader_scene_info import CameraInfo, PointCloud, SceneInfo, SFMInitData
 
 
 def parse_principle_point(info, is_cx):
@@ -72,6 +72,13 @@ def read_a_camera(frame, fovx, fovy, cx_p, cy_p, path, extension, points=None, c
         depth_path = ""
         depth = None
 
+    if "normal_path" in frame:
+        normal_path = os.path.join(path, frame["normal_path"])
+        normal = Image.open(normal_path)
+    else:
+        normal_path = ""
+        normal = None
+
     # Load mask if there is
     if "mask_path" in frame:
         mask_path = os.path.join(path, frame["mask_path"])
@@ -81,7 +88,7 @@ def read_a_camera(frame, fovx, fovy, cx_p, cy_p, path, extension, points=None, c
         mask = None
 
     # Load sparse point
-    if points is not None:
+    if points is not None and correspondent is not None:
         key = f"{image_name}.{extension}"
         sparse_pt = points[correspondent[key]]
     else:
@@ -95,6 +102,7 @@ def read_a_camera(frame, fovx, fovy, cx_p, cy_p, path, extension, points=None, c
         cx_p=cx_p, cy_p=cy_p,
         image=image, image_path=image_path,
         depth=depth, depth_path=depth_path,
+        normal=normal, normal_path=normal_path,
         mask=mask, mask_path=mask_path,
         sparse_pt=sparse_pt,
     )
@@ -120,8 +128,9 @@ def read_nerf_dataset(path, extension, test_every, eval):
     # Read SfM sparse points if there is
     point_cloud = None
     correspondent = None
-
+    sfm_data = None
     ply_path = os.path.join(path, "points3D.ply")
+    txt_path = os.path.join(path, "points3D.txt")
     if os.path.exists(ply_path):
         points, colors, normals = fetchPly(ply_path)
         point_cloud = PointCloud(
@@ -131,6 +140,21 @@ def read_nerf_dataset(path, extension, test_every, eval):
             ply_path=ply_path)
     else:
         points = None
+
+    if os.path.exists(txt_path):
+        sfm_xyz, idx_to_pid, pid_to_img_ids = read_points3d_text_optimized(txt_path)
+        sfm_data = SFMInitData(
+            points_xyz=sfm_xyz,
+            index_to_point_id=idx_to_pid,
+            point_id_to_image_ids=pid_to_img_ids
+        )
+    else:
+        sfm_data = SFMInitData(
+            points_xyz=points,
+            index_to_point_id=None,
+            point_id_to_image_ids=None
+        )
+
 
     cor_path = os.path.join(path, "points_correspondent.json")
     if os.path.exists(cor_path):
@@ -178,5 +202,7 @@ def read_nerf_dataset(path, extension, test_every, eval):
         train_cam_infos=train_cam_infos,
         test_cam_infos=test_cam_infos,
         suggested_bounding=suggested_bounding,
-        point_cloud=point_cloud)
+        point_cloud=point_cloud,
+        sfm_init_data=sfm_data
+    )
     return scene_info

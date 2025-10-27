@@ -305,8 +305,16 @@ def fetchPly(path):
     plydata = PlyData.read(path)
     vertices = plydata['vertex']
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
-    colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
-    normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
+    def has_props(names):
+        return all(n in vertices.data.dtype.names for n in names)
+    if not has_props(['red', 'green', 'blue']):
+        colors = np.zeros_like(positions)
+    else:
+        colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
+    if not has_props(['nx', 'ny', 'nz']):
+        normals = np.zeros_like(positions)
+    else:
+        normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
     return positions, colors, normals
 
 def storePly(path, xyz, rgb):
@@ -362,3 +370,33 @@ def read_colmap_ply(path, cam_extrinsics):
         correspondent = json.load(f)
 
     return positions, colors, normals, ply_path, correspondent
+
+def read_points3d_text_optimized(path):
+    
+    xyz_list = []
+    index_to_point_id_list = []
+    point_id_to_image_ids = {}
+    
+    with open(path, "r") as fid:
+        for line in fid:
+            line = line.strip()
+            
+            if len(line) == 0 or line.startswith("#"):
+                continue
+            
+            parts = line.split()
+            
+            point_id = int(parts[0])
+            xyz = [float(p) for p in parts[1:4]]
+            
+            track = np.array(parts[8:], int)
+            image_ids = track[0::2]
+            
+            xyz_list.append(xyz)
+            index_to_point_id_list.append(point_id)
+            point_id_to_image_ids[point_id] = image_ids
+            
+    points_xyz = np.array(xyz_list, dtype=np.float32)
+    index_to_point_id = np.array(index_to_point_id_list, dtype=np.int32)
+    
+    return points_xyz, index_to_point_id, point_id_to_image_ids

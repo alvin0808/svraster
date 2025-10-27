@@ -7,16 +7,16 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 import numpy as np
-
+import os
 import torch
 import svraster_cuda
 
 from src.utils.activation_utils import rgb2shzero
-from src.utils import octree_utils
+from src.utils import octree_utils, sdf_init_utils
 
 class SVConstructor:
 
-    def model_init(self, bounding, cfg_init,cfg_mode, cameras=None):
+    def model_init(self, bounding, cfg_init,cfg_mode, cameras=None, sfm_init=None):
         # Define scene bound
         center = (bounding[0] + bounding[1]) * 0.5
         radius = (bounding[1] - bounding[0]) * 0.5
@@ -107,14 +107,21 @@ class SVConstructor:
         # num_grid_pts = 8 * len(self.octpath) = len(self.grid_pts_key)
 
         self.active_sh_degree = min(cfg_init.sh_degree_init, self.max_sh_degree)
-        mode = 0
+        if cfg_init.init_sparse_points and sfm_init is not None:
+            mode = 2
+        else:
+            if cfg_init.init_sparse_points:
+                print("Warning: No SfM sparse points provided, init by spherical distribution.")
+            mode = 1
+
+
         if cfg_mode == "exp_linear_11":
             _geo_grid_pts = torch.full([self.num_grid_pts, 1], cfg_init.geo_init, dtype=torch.float32, device="cuda")
-        elif mode ==1 : 
+        elif mode ==0 : 
             _geo_grid_pts = (
                 torch.empty([self.num_grid_pts, 1], device="cuda").uniform_(0.78, 0.8)
             )
-        else:
+        elif mode ==1:
             # scene 
             #print("scene center:", self.scene_center.tolist())
             #print("scene extent:", self.scene_extent.tolist())
@@ -133,12 +140,30 @@ class SVConstructor:
             _geo_grid_pts = torch.empty([self.num_grid_pts, 1], device="cuda")
 
             #inside(f(x) < 0)
-            _geo_grid_pts = (dist - self.inside_extent.item() / 5) 
+            _geo_grid_pts = (dist - self.inside_extent.item() / 5) *2
 
             #outside (f(x) >> 0)
             _geo_grid_pts[outside_mask] = torch.empty_like(dist[outside_mask]).uniform_(self.inside_extent.item()*0.617, self.inside_extent.item()*0.867)
-        # 
+        elif mode ==2:
+            if hasattr(self, 'model_path') and self.model_path:
+                # exist_ok=True 옵션은 디렉토리가 이미 존재해도 에러를 발생시키지 않습니다.
+                os.makedirs(self.model_path, exist_ok=True)
+                print(f"Ensured output directory exists: {self.model_path}")
+            # ==========================================================
+
+            debug_ply_output_path = os.path.join(self.model_path, "debug_filtered_points.ply")
+            
+            _geo_grid_pts = sdf_init_utils.initialize_sdf_from_sfm(
+                sfm_init=sfm_init,
+                cameras=cameras,
+                grid_pts_key=self.grid_pts_key,
+                scene_center=self.scene_center,
+                scene_extent=self.scene_extent,
+                voxel_size=self.vox_size.min(),
+                debug_ply_output_path=debug_ply_output_path  # <<<< voxel_size 전달!
+            )
         _rgb = torch.full([N, 3], cfg_init.sh0_init, dtype=torch.float32, device="cuda")
+        
         _shs = torch.full([N, (self.max_sh_degree+1)**2 - 1, 3], cfg_init.shs_init, dtype=torch.float32, device="cuda")
 
         _sh0 = rgb2shzero(_rgb)

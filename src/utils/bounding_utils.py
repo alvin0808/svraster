@@ -81,7 +81,12 @@ def main_scene_bound_pcd_heuristic(pcd, pcd_density_rate):
 
     # Find the smallest radius with point density equal to pcd_density_rate of maximum
     target_density = pcd_density_rate * density[max_idx]
-    target_idx = max_idx + np.where(density[max_idx:] < target_density)[0][0]
+    right = density[max_idx:]
+    below = np.where(right < target_density)[0]
+    if below.size == 0:
+        target_idx = len(dist) - 1  
+    else:
+        target_idx = max_idx + int(below[0])
 
     radius = dist[target_idx]
 

@@ -9,9 +9,9 @@
 import os
 import random
 import numpy as np
-
+from PIL import Image
 import torch
-
+import torch.nn.functional as F
 from src.dataloader.reader_colmap_dataset import read_colmap_dataset
 from src.dataloader.reader_nerf_dataset import read_nerf_dataset
 
@@ -65,11 +65,13 @@ class DataPack:
 
         self.has_depth = False
         self.has_mask = False
+        self.has_normal = False
         for cams_split in self._cameras.values():
             for cams in cams_split.values():
                 for cam in cams:
                     self.has_depth |= cam.depth is not None
                     self.has_mask |= cam.mask is not None
+                    self.has_normal |= cam.normal is not None
 
         if self.has_mask and cfg_data.blend_mask:
             bg_color = torch.tensor([float(white_background)]*3, dtype=torch.float32)
@@ -83,7 +85,7 @@ class DataPack:
             self.to_world_matrix = np.loadtxt(to_world_path)
 
         self.point_cloud = scene_info.point_cloud
-
+        self.sfm_init_data = scene_info.sfm_init_data
     def get_train_cameras(self, scale=1.0):
         return self._cameras['train'][scale]
 
@@ -191,11 +193,29 @@ def instantiate_a_camera(cam_info, cfg_data, dataset_downscale):
             pil_depth = cam_info.depth
         depth = torch.tensor(np.array(pil_depth) / cfg_data.depth_scale, dtype=torch.float32)
         depth = depth.unsqueeze(0).contiguous()
+    normal = None
+    if cam_info.normal is not None:
+        if cam_info.normal.size != target_resolution:
+            pil_normal = cam_info.normal.resize(target_resolution, Image.Resampling.BILINEAR)
+        else:
+            pil_normal = cam_info.normal
+
+        n = np.asarray(pil_normal, dtype=np.float32) / 255.0     # [H,W,3] in [0,1]
+        n = n * 2.0 - 1.0                                        # → [-1,1]
+        n = np.nan_to_num(n, nan=0.0, posinf=0.0, neginf=0.0)
+
+        R_wc = cam_info.w2c[:3, :3].T.astype(np.float32)         # [3,3]
+        R_wc_t = torch.from_numpy(R_wc)                           # torch [3,3]
+
+        normal_cam = torch.from_numpy(n).permute(2,0,1).contiguous().float()  # [3,H,W]
+        normal_world = torch.einsum('ij,jhw->ihw', R_wc_t, normal_cam)        # [3,H,W]
+
+        normal = F.normalize(normal_world, dim=0, eps=1e-8)
 
     return Camera(w2c=cam_info.w2c,
                   fovx=cam_info.fovx, fovy=cam_info.fovy,
                   cx_p=cam_info.cx_p, cy_p=cam_info.cy_p,
-                  image=gt_image, mask=mask, depth=depth,
+                  image=gt_image, mask=mask, depth=depth, normal=normal,
                   sparse_pt=cam_info.sparse_pt,
                   image_name=cam_info.image_name)
 

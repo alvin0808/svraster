@@ -302,14 +302,13 @@ renderCUDA(
             float each_dI_dgeo_params[n_samp][8];
             float interp_w[8];
             float local_alphas[n_samp];
-
+            const int vox_id = collected_vox_id[j];
             float vox_l_inv = 1.f / vox_l;
             if(density_mode == DENSITY_SDF)
             {
                 float3 p_entry = ro + a * rd;
                 float3 p_exit  = ro + b * rd;
 
-                float vox_l_inv = 1.f / vox_l;
 
                 float3 qt_entry = (p_entry - (vox_c - 0.5f * vox_l)) * vox_l_inv;
                 float3 qt_exit  = (p_exit  - (vox_c - 0.5f * vox_l)) * vox_l_inv;
@@ -328,7 +327,7 @@ renderCUDA(
                 denom = phi_entry + eps;
                 float raw_alpha = (phi_entry - phi_exit) / denom;
                 alpha = min(MAX_ALPHA, fmaxf(raw_alpha, 0.f));
-                exp_neg_vol_int = 1.f; //굳이?
+                exp_neg_vol_int = 1.f; //����?
                 
                 
             }
@@ -369,9 +368,45 @@ renderCUDA(
                 exp_neg_vol_int = expf(-vol_int);
                 alpha = min(MAX_ALPHA, 1.f - exp_neg_vol_int);
             }
-            if (alpha < MIN_ALPHA)
-                continue;
+            if (alpha < MIN_ALPHA){
+                if (lambda_ascending > 0)
+                {
+                    const float3 pt_a = ro + a * rd;
+                    const float3 qt_a = (pt_a - (vox_c - 0.5f * vox_l)) * vox_l_inv;
+                    const float3 pt_b = ro + b * rd;
+                    const float3 qt_b = (pt_b - (vox_c - 0.5f * vox_l)) * vox_l_inv;
 
+                    float interp_w_a[8], interp_w_b[8];
+                    tri_interp_weight(qt_a, interp_w_a);
+                    tri_interp_weight(qt_b, interp_w_b);
+
+                    float d_a = 0.f, d_b = 0.f;
+                    for (int iii=0; iii<8; ++iii)
+                    {
+                        d_a += geo_params[iii] * interp_w_a[iii];
+                        d_b += geo_params[iii] * interp_w_b[iii];
+                    }
+
+                    if (density_mode == DENSITY_SDF) {
+                         // L = max(0, d_b - d_a)
+                        const float reg_w = weight_ascending * static_cast<float>(d_b > d_a);
+
+                        float grad_pack_local[12] = {0.f};
+                        if (T<0.5) continue;
+                        for (int iii = 0; iii < 8; ++iii) {
+                            grad_pack_local[iii] = reg_w * T * (interp_w_b[iii] - interp_w_a[iii]);
+                        }
+
+                        const int base_id = cg::this_grid().thread_rank();
+                        #pragma unroll
+                        for (int iii = 0; iii < 12; ++iii) {
+                            atomicAdd(dL_dvox + vox_id * 12 + (base_id + iii) % 12,
+                                    grad_pack_local[(base_id + iii) % 12]);
+                        }
+                    }
+                }
+                continue;
+            }
             // Recover the blending weight of this voxel.
             T = T / (1.f - alpha);
             const float pt_w = alpha * T;
@@ -379,7 +414,7 @@ renderCUDA(
             // Propagate gradients to per-voxel colors and keep
             // gradients w.r.t. voxel alpha.
             // Load from share memory.
-            const int vox_id = collected_vox_id[j];
+            //const int vox_id = collected_vox_id[j];
 
             const float3 c = collected_rgb[j];
 
@@ -405,7 +440,7 @@ renderCUDA(
                 suffix_w += pt_w;
             }
             const float sdf0_t = sdf0_buffer[pix_id];
-            if (need_normal && density_mode == DENSITY_SDF && sdf0_t > 0.f) {
+            if(false){// (need_normal && density_mode == DENSITY_SDF && sdf0_t > 0.f) {
                 float3 p_sdf0 = ro + sdf0_t * rd;
 
                 float3 min_corner = vox_c - 0.5f * vox_l;
@@ -442,10 +477,10 @@ renderCUDA(
 
                     float3 grad = make_float3(grad_x, grad_y, grad_z);
                     float norm = safe_rnorm(grad);
-                    float3 N = grad * norm;  // forward의 normal
-                    float3 dL_dN_sdf = T * dL_dN;  // pt_w는 T * alpha, 이게 normal loss에 해당
+                    float3 N = grad * norm;  // forward�� normal
+                    float3 dL_dN_sdf = T * dL_dN;  // pt_w�� T * alpha, �̰� normal loss�� �ش�
 
-                    // Chain rule: dL/dg = dL/dN ⋅ dN/dg = (I - NNᵀ) * dL/dN * dgrad/dg
+                    // Chain rule: dL/dg = dL/dN ? dN/dg = (I - NN?) * dL/dN * dgrad/dg
                     float3 dL_dgrad = dL_dN_sdf - dot(dL_dN_sdf, N) * N;  // projection
                     float dnx = dL_dgrad.x * norm;
                     float dny = dL_dgrad.y * norm;
@@ -461,7 +496,7 @@ renderCUDA(
                 }
             }
             // Gradient from normal
-            if (need_normal && density_mode != DENSITY_SDF)
+            if(need_normal)// (need_normal && density_mode != DENSITY_SDF)
             {
                 float N_grad_to_geo_params[8];
                 const float lin_nx = (
@@ -620,7 +655,7 @@ renderCUDA(
 
                 if (density_mode == DENSITY_SDF) {
                     // descending: L = max(0, d_b - d_a)
-                    const float reg_w = weight_ascending * pt_w * static_cast<float>(d_b > d_a);
+                    const float reg_w = weight_ascending * static_cast<float>(d_b > d_a);
                     for (int iii = 0; iii < 8; ++iii)
                         dL_dgeo_params[iii] += reg_w * (interp_w_b[iii] - interp_w_a[iii]);
                 } else {
@@ -756,7 +791,7 @@ void render(
         ) :
     (density_mode == DENSITY_SDF) ?
         BwRendFunc(3, DENSITY_SDF):
-        BwRendFunc(3, DENSITY_SDF); //무조건 이렇게
+        BwRendFunc(3, DENSITY_SDF); //������ �̷���
 
     kernel_func <<<tile_grid, block>>> (
         ranges,

@@ -55,7 +55,7 @@ cfg.optimizer = CfgNode(dict(
     geo_lr = 0.025,
     sh0_lr = 0.010,
     shs_lr = 0.00025,
-    log_s_lr = 0.001, # osh ?•„ì§? ?™•? •?•„?‹˜
+    log_s_lr = 0.001, # osh ?ï¿½ï¿½ï¿½??????? ?ï¿½ï¿½?ï¿½ï¿½?ï¿½ï¿½?ï¿½ï¿½
 
     optim_beta1 = 0.1,
     optim_beta2 = 0.99,
@@ -104,7 +104,7 @@ cfg.regularizer = CfgNode(dict(
     lambda_T_inside = 0.0,
 
     # Per-point rgb loss
-    lambda_R_concen = 0.01,
+    lambda_R_concen = 0.01, #0.01
 
     # Geometric regularization
     lambda_ascending = 0.0,
@@ -126,12 +126,16 @@ cfg.regularizer = CfgNode(dict(
     n_dmed_from=3000,
     n_dmed_end=20_000,
 
+    lambda_pi3_normal = 0.1,
+    pi3_normal_from=0,
+    pi3_normal_end=4000,
+
     # Total variation loss of density grid
-    lambda_tv_density = 1e-9,
+    lambda_tv_density = 1e-8,
     tv_from = 0,
     tv_until = 10000,
     tv_decay_every = 1000,
-    tv_decay_mult = 1.0,
+    tv_decay_mult = 0.8,
     tv_sparse = False,
 
     lambda_vg_density = 1e-10,
@@ -141,22 +145,29 @@ cfg.regularizer = CfgNode(dict(
     vg_decay_mult = 0.5,
     vg_sparse = False,
 
-    lambda_ge_density = 1e-8,
+    lambda_ge_density = 2e-8,
     ge_from = 0,
     ge_until = 20000,
-    ge_decay_every = 3000,
-    ge_decay_mult = 1,
+    ge_decay_every = 2000,
+    ge_decay_mult = 0.25,
     ge_sparse = False,
 
-    lambda_ls_density = 1e-8,
+    lambda_ls_density = 1e-10,
     ls_from = 0,
     ls_until = 20000,
     ls_decay_every = 6000,
-    ls_decay_mult = 1.0,
+    ls_decay_mult = 0.25,
     ls_sparse = False,
 
+    lambda_points_density = 0.00000,
+    points_loss_from = 0,
+    points_loss_until = 4000,
+    points_loss_decay_every = 2000,
+    points_loss_decay_mult = 1.0,
+    points_loss_sparse = False,
+    points_sample_rate = 0.05,
     # Data augmentation
-    ss_aug_max = 1.5,
+    ss_aug_max = 1,
     rand_bg = False,
 
 ))
@@ -166,7 +177,7 @@ cfg.init = CfgNode(dict(
     geo_init = -10.0, 
     sh0_init = 0.5,
     shs_init = 0.0,
-    log_s_init = 0.3, #?ˆ˜? •?´ ?•„?š” ?™•? • ?•„?‹˜
+    log_s_init = 0.3, #?ï¿½ï¿½?ï¿½ï¿½?ï¿½ï¿½ ?ï¿½ï¿½?ï¿½ï¿½ ?ï¿½ï¿½?ï¿½ï¿½ ?ï¿½ï¿½?ï¿½ï¿½
 
     sh_degree_init = 3,
 
@@ -180,14 +191,16 @@ cfg.init = CfgNode(dict(
     #   heuristic   : init fixed amount of voxels based on init_out_ratio.
     outside_mode = "heuristic",
     init_out_ratio = 2.0,
-
+    
     # Apply aabb crop if given
     aabb_crop = False,
+
+    init_sparse_points = True,
 ))
 
 cfg.procedure = CfgNode(dict(
     # Schedule
-    n_iter = 20_000,
+    n_iter = 8_000,
     sche_mult = 1.0,
     seed=3721,
 
