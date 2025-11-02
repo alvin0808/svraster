@@ -69,7 +69,7 @@ def extract_mesh_progressive(args, data_pack, voxel_model, init_lv, final_lv, cr
         if args.use_mean:
             frame_depth = render_pkg['raw_depth'][[0]]  # Use mean depth
         else:
-            frame_depth = render_pkg['raw_depth'][[3]]  # Use median depth
+            frame_depth = render_pkg['raw_depth'][[2]]  # Use median depth
         frame_alpha = 1 - render_pkg['raw_T']
         if args.save_gpu:
             frame_depth = frame_depth.cpu()
@@ -347,7 +347,7 @@ if __name__ == "__main__":
     parser.add_argument("--direct", action='store_true')
     parser.add_argument("--adaptive", action='store_true')
     parser.add_argument("--init_lv", default=7, type=int)
-    parser.add_argument("--final_lv", default=9, type=int)
+    parser.add_argument("--final_lv", default=10, type=int)
     parser.add_argument("--trunc_lv", default=10, type=int)
     parser.add_argument("--trunc_vox", default=5.0, type=float)
     parser.add_argument("--crop_border", default=0.01, type=float)

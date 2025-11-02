@@ -15,6 +15,7 @@ void laplacian_smoothness_bw(
     const torch::Tensor& grid_mask,
     const torch::Tensor& grid_keys,
     const torch::Tensor& grid2voxel,
+    const torch::Tensor& active_list,
     const float weight,
     const float vox_size_inv,
     const bool no_tv_s,

@@ -86,8 +86,8 @@ cfg.regularizer = CfgNode(dict(
 
     # Depthanything loss
     lambda_depthanythingv2 = 0.0,
-    depthanythingv2_from = 30000,
-    depthanythingv2_end = 20000,
+    depthanythingv2_from = 00,
+    depthanythingv2_end = 8000,
     depthanythingv2_end_mult = 0.1,
 
     # Mast3r metrid loss
@@ -109,6 +109,7 @@ cfg.regularizer = CfgNode(dict(
     # Geometric regularization
     lambda_ascending = 0.0,
     ascending_from = 0,
+    ascending_until = 2000,
 
     # Distortion loss (encourage distribution concentration on ray)
     lambda_dist = 0.1,
@@ -116,19 +117,21 @@ cfg.regularizer = CfgNode(dict(
 
     # Consistency loss of rendered normal and derived normal from expected depth
     lambda_normal_dmean = 0.0,
-    n_dmean_from = 10_000,
+    n_dmean_from = 2_000,
     n_dmean_end = 20_000,
     n_dmean_ks = 3,
     n_dmean_tol_deg = 90.0,
 
     # Consistency loss of rendered normal and derived normal from median depth
     lambda_normal_dmed = 0.0,
-    n_dmed_from=3000,
+    n_dmed_from=2000,
     n_dmed_end=20_000,
 
     lambda_pi3_normal = 0.1,
     pi3_normal_from=0,
-    pi3_normal_end=4000,
+    pi3_normal_end=2500,
+    pi3_normal_decay_every=4000,
+    pi3_normal_decay_mult=0.5,
 
     # Total variation loss of density grid
     lambda_tv_density = 1e-8,
@@ -147,17 +150,19 @@ cfg.regularizer = CfgNode(dict(
 
     lambda_ge_density = 2e-8,
     ge_from = 0,
-    ge_until = 20000,
+    ge_until = 6000,
     ge_decay_every = 2000,
     ge_decay_mult = 0.25,
     ge_sparse = False,
+    ge_drop_ratio = 0.5,
 
-    lambda_ls_density = 1e-10,
+    lambda_ls_density = 2e-10,
     ls_from = 0,
-    ls_until = 20000,
-    ls_decay_every = 6000,
+    ls_until = 6000,
+    ls_decay_every = 2000,
     ls_decay_mult = 0.25,
     ls_sparse = False,
+    ls_drop_ratio = 0.5,
 
     lambda_points_density = 0.00000,
     points_loss_from = 0,
@@ -217,7 +222,7 @@ cfg.procedure = CfgNode(dict(
     # Adaptive voxel pruning
     subdivide_from = 1000,
     subdivide_every = 1000,
-    subdivide_until = 15000,
+    subdivide_until = 8000,
     subdivide_samp_thres = 1.0, # A voxel max sampling rate should larger than this.
     subdivide_target_scale = 90.0,
     subdivide_max_num = 10_000_000,

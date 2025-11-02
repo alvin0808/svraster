@@ -255,32 +255,50 @@ renderCUDA(
             if (density_mode == SDF_MODE){
                 float vox_l_inv = 1.f / vox_l;
                 float3 p_entry = ro + a * rd;
-                float3 p_exit  = ro + b * rd;
-
+                float seg_len = (b-a)*(1.f/n_samp);
+                //float3 p_exit  = ro + b * rd;
+                float3 P_step = (b-a)*rd/n_samp;
+                float eps = 1e-6f;
                 float3 qt_entry = (p_entry - (vox_c - 0.5f * vox_l))*vox_l_inv;
-                float3 qt_exit  = (p_exit  - (vox_c - 0.5f * vox_l)) *vox_l_inv;
+                float3 qt_step = P_step * vox_l_inv;
+                //float3 qt_exit  = (p_exit  - (vox_c - 0.5f * vox_l)) *vox_l_inv;
                 tri_interp_weight(qt_entry, interp_w);
-                float sdf_entry = 0.f, sdf_exit = 0.f;
+                float sdf_former = 0.f;//, sdf_exit = 0.f;
                 for (int iii=0; iii<8; ++iii)
-                    sdf_entry += geo_params[iii] * interp_w[iii];
+                    sdf_former += geo_params[iii] * interp_w[iii];
                 // Exit point SDF
-                tri_interp_weight(qt_exit, interp_w);
-                for (int iii=0; iii<8; ++iii)
-                    sdf_exit += geo_params[iii] * interp_w[iii];
+                float phi_former = 1.f / (1.f + expf(-s_val[0] * sdf_former));
+                float sdf_entry = sdf_former;
+                float phi_entry = phi_former;
+                for(int k=0;k<n_samp;k++){
+                    float3 qt_curr = qt_entry + qt_step * (k+1);
+                    tri_interp_weight(qt_curr, interp_w);
+                    float sdf_curr = 0.f;
+                    for (int iii=0; iii<8; ++iii)
+                        sdf_curr += geo_params[iii] * interp_w[iii];
+                    float phi_curr  = 1.f / (1.f + expf(-s_val[0] * sdf_curr));
+                    if(need_depth && n_samp > 1)
+                        local_alphas[k] = fmaxf((phi_former - phi_curr) / (phi_former + eps), 0.f);
+                    if ( !has_sdf0 &&sdf_former > 0.f && sdf_curr < 0.f ) {
+                        float sdf_range = sdf_former - sdf_curr ;
+                        float t_ratio = sdf_former / sdf_range;
+                        float t_sdf0 = a + (k+t_ratio)*seg_len;
+                        sdf0_t = t_sdf0;
+                        has_sdf0 = true;
+                    }
+                    phi_former = phi_curr;
+                    sdf_former = sdf_curr;
+                    
+                }
+                //tri_interp_weight(qt_exit, interp_w);
+                //for (int iii=0; iii<8; ++iii)
+                 //   sdf_exit += geo_params[iii] * interp_w[iii];
                 // Logistic CDF
-                float phi_entry = 1.f / (1.f + expf(-s_val[0] * sdf_entry));
-                float phi_exit  = 1.f / (1.f + expf(-s_val[0] * sdf_exit));
+                //float phi_entry = 1.f / (1.f + expf(-s_val[0] * sdf_entry));
+                //float phi_exit  = 1.f / (1.f + expf(-s_val[0] * sdf_exit));
 
                 // Neus-style alpha
-                float eps = 1e-6f;
-                alpha = fmaxf((phi_entry - phi_exit) / (phi_entry + eps), 0.f);
-                if (sdf_entry > 0.f && sdf_exit < 0.f && !has_sdf0) {
-                    float sdf_range = sdf_entry - sdf_exit + 1e-6f;
-                    float t_ratio = sdf_entry / sdf_range;
-                    float t_sdf0 = a + (b - a) * t_ratio;
-                    sdf0_t = t_sdf0;
-                    has_sdf0 = true;
-                }
+                alpha = fmaxf((phi_entry - phi_former) / (phi_entry + 1e-6f), 0.f);
                 if (alpha < MIN_ALPHA)
                     continue;
             }
@@ -326,7 +344,7 @@ renderCUDA(
             {
                 // Mean depth
                 float dval;
-                if (n_samp == 3 & density_mode != SDF_MODE)
+                if (n_samp == 3 )
                 {
                     float step_sz = 0.3333333f * (b - a);
                     float a0 = local_alphas[0], a1 = local_alphas[1], a2 = local_alphas[2];
@@ -335,14 +353,13 @@ renderCUDA(
                     float t2 = a + 2.5f * step_sz;
                     dval = a0*t0 + (1.f-a0)*a1*t1 + (1.f-a0)*(1.f-a1)*a2*t2;
                 }
-                else if (n_samp == 2 & density_mode != SDF_MODE)
+                else if (n_samp == 2)
                 {
                     float step_sz = 0.5f * (b - a);
                     float a0 = local_alphas[0], a1 = local_alphas[1];
                     float t0 = a + 0.5f * step_sz;
                     float t1 = a + 1.5f * step_sz;
                     dval = a0*t0 + (1.f-a0)*a1*t1;
-                    // sdf ���ε� �����ؾߵ�
                 }
                 else
                 {
@@ -436,35 +453,71 @@ renderCUDA(
         float3 vox_c = vox_centers[D_med_vox_id];
         float vox_l = vox_lengths[D_med_vox_id];
         float geo_params[8];
-        for (int k=0; k<8; ++k)
-            geo_params[k] = geos[D_med_vox_id*8 + k];
+        for (int k = 0; k < 8; ++k)
+            geo_params[k] = geos[D_med_vox_id * 8 + k];
+
         const float2 ab = ray_aabb(vox_c, vox_l, ro, rd_inv);
         const float a = ab.x;
         const float b = ab.y;
 
-        float vox_l_inv = 1.f / vox_l;
+        const float vox_l_inv = 1.f / vox_l;
         const float step_sz = (b - a) * (1.f / n_samp_dmed);
         const float3 step = step_sz * rd;
-        float3 pt = ro + (a + 0.5f * step_sz) * rd;
-        float3 qt = (pt - (vox_c - 0.5f * vox_l)) * vox_l_inv;
-        const float3 qt_step = step * vox_l_inv;
 
         D_med = a - 0.5f * step_sz;
-        for (int k=0; k<n_samp_dmed && D_med_T > 0.5f; k++, qt=qt+qt_step)
-        {
-            D_med += step_sz;
 
-            float interp_w[8];
-            tri_interp_weight(qt, interp_w);
-            float d = 0.f;
-            for (int iii=0; iii<8; ++iii)
-                d += geo_params[iii] * interp_w[iii];
+        if (density_mode != SDF_MODE) {
+            // ===== 기존 밀도 기반 경로 (그대로) =====
+            float3 pt = ro + (a + 0.5f * step_sz) * rd;                     // midpoint sampling
+            float3 qt = (pt - (vox_c - 0.5f * vox_l)) * vox_l_inv;
+            const float3 qt_step = step * vox_l_inv;
 
-            const float vol_int = STEP_SZ_SCALE * step_sz * exp_linear_11(d);
+            for (int k = 0; k < n_samp_dmed && D_med_T > 0.5f; k++, qt = qt + qt_step)
+            {
+                D_med += step_sz;
 
-            D_med_T *= expf(-vol_int);
+                float interp_w[8];
+                tri_interp_weight(qt, interp_w);
+                float d = 0.f;
+                for (int iii = 0; iii < 8; ++iii)
+                    d += geo_params[iii] * interp_w[iii];
+
+                const float vol_int = STEP_SZ_SCALE * step_sz * exp_linear_11(d);
+                D_med_T *= expf(-vol_int);
+            }
+        } else {
+            // ===== SDF(NeuS) 전용 경로: 경계 CDF 차이로 alpha_k 계산 =====
+            const float eps = 1e-6f;
+
+            float3 q_edge = ( (ro + a * rd) - (vox_c - 0.5f * vox_l) ) * vox_l_inv; // t=a
+            const float3 q_edge_step = step * vox_l_inv;                             // to t_{k+1}
+
+            float w_prev[8];
+            tri_interp_weight(q_edge, w_prev);
+            float sdf_prev = 0.f;
+            for (int iii = 0; iii < 8; ++iii) sdf_prev += geo_params[iii] * w_prev[iii];
+            float phi_prev = 1.f / (1.f + expf(-s_val[0] * sdf_prev));
+
+            for (int k = 0; k < n_samp_dmed && D_med_T > 0.5f; k++)
+            {
+                D_med += step_sz;
+                q_edge = q_edge + q_edge_step;
+
+                float w_curr[8];
+                tri_interp_weight(q_edge, w_curr);
+                float sdf_curr = 0.f;
+                for (int iii = 0; iii < 8; ++iii) sdf_curr += geo_params[iii] * w_curr[iii];
+                float phi_curr = 1.f / (1.f + expf(-s_val[0] * sdf_curr));
+
+                float alpha_k = (phi_prev - phi_curr) / (phi_prev + eps);
+
+                D_med_T *= (1.f - alpha_k);
+
+                phi_prev = phi_curr;
+            }
         }
     }
+
 
     // All threads that treat valid pixel write out their final
     // rendering data to the frame and auxiliary buffers.
@@ -529,8 +582,6 @@ renderCUDA(
             renderCUDA<true, true, false, false, true, n_samp, density_mode> :\
         (need_feat && need_depth && !need_distortion && !need_normal && !track_max_w) ?\
             renderCUDA<true, true, false, false, false, n_samp, density_mode> :\
-        (need_feat && !need_depth && need_distortion && need_normal && track_max_w) ?\
-            renderCUDA<true, false, true, true, true, n_samp, density_mode> :\
         (need_feat && !need_depth && need_distortion && need_normal && track_max_w) ?\
             renderCUDA<true, false, true, true, true, n_samp, density_mode> :\
         (need_feat && !need_depth && need_distortion && need_normal && !track_max_w) ?\
@@ -633,9 +684,13 @@ void render(
                 FwRendFunc(3, DENSITY_EXP_LINEAR_11) :
                 FwRendFunc(2, DENSITY_EXP_LINEAR_11)
         ) :
-    (density_mode == DENSITY_SDF) ?
-        FwRendFunc(2, DENSITY_SDF):
-        FwRendFunc(2, DENSITY_SDF); //������ �̷���
+        (
+            (vox_geo_mode == VOX_TRIINTERP1_MODE) ?
+                FwRendFunc(1, DENSITY_SDF) :
+            (vox_geo_mode == VOX_TRIINTERP3_MODE) ?
+                FwRendFunc(3, DENSITY_SDF) :
+                FwRendFunc(2, DENSITY_SDF)
+        );
 
     kernel_func <<<tile_grid, block>>> (
         ranges,

@@ -304,6 +304,12 @@ renderCUDA(
             float local_alphas[n_samp];
             const int vox_id = collected_vox_id[j];
             float vox_l_inv = 1.f / vox_l;
+            #pragma unroll
+            for (int kk=0; kk<n_samp; ++kk){
+                #pragma unroll
+                for (int ii=0; ii<8; ++ii) each_dI_dgeo_params[kk][ii] = 0.f;
+                local_alphas[kk] = 0.f;
+            }
             if(density_mode == DENSITY_SDF)
             {
                 float3 p_entry = ro + a * rd;
@@ -326,9 +332,60 @@ renderCUDA(
                 float eps = 1e-6f;
                 denom = phi_entry + eps;
                 float raw_alpha = (phi_entry - phi_exit) / denom;
-                alpha = min(MAX_ALPHA, fmaxf(raw_alpha, 0.f));
+                alpha = fmaxf(raw_alpha, 0.f);
                 exp_neg_vol_int = 1.f; //����?
-                
+
+                if (need_depth && (n_samp == 2 || n_samp == 3)) {
+                    const float3 qt0 = ( (ro + a * rd) - (vox_c - 0.5f * vox_l) ) * vox_l_inv;
+                    const float3 qt_step = ((b - a) * rd / n_samp) * vox_l_inv;
+
+                    float eps = 1e-6f;
+                    // kk 구간의 양 끝점
+                    #pragma unroll
+                    for (int kk = 0; kk < n_samp; ++kk) {
+                        float3 qk  = qt0 + qt_step * kk;
+                        float3 qk1 = qt0 + qt_step * (kk + 1);
+
+                        float wk[8], wk1[8];
+                        tri_interp_weight(qk,  wk);
+                        tri_interp_weight(qk1, wk1);
+
+                        // sdf, phi at two endpoints
+                        float sdf_k = 0.f, sdf_k1 = 0.f;
+                        #pragma unroll
+                        for (int ii=0; ii<8; ++ii) {
+                            sdf_k  += geo_params[ii] * wk[ii];
+                            sdf_k1 += geo_params[ii] * wk1[ii];
+                        }
+                        float phi_k  = 1.f / (1.f + expf(-s_val[0] * sdf_k));
+                        float phi_k1 = 1.f / (1.f + expf(-s_val[0] * sdf_k1));
+
+                        // forward의 local_alphas와 동일(Neus-style 구간 alpha)
+                        float denom_k = phi_k + eps;
+                        float raw_alpha_k = (phi_k - phi_k1) / denom_k;
+                        float alpha_k = fmaxf(raw_alpha_k, 0.f);                // clamp 하되
+                        float allow   = raw_alpha_k > 0.f ? 1.f : 0.f;
+
+                        if (need_depth && n_samp > 1) {
+                            local_alphas[kk] = alpha_k; // forward와 동일한 값 저장
+                        }
+
+                        // d alpha_k / d phi_k, d phi_k1 (체인룰)
+                        float d_ad_phi_k  = allow * ((phi_k1) / (denom_k * denom_k));
+                        float d_ad_phi_k1 = allow * (-1.f / denom_k);
+
+                        // d phi / d sdf
+                        float dphi_k_dsdf  = s_val[0] * phi_k  * (1.f - phi_k );
+                        float dphi_k1_dsdf = s_val[0] * phi_k1 * (1.f - phi_k1);
+
+                        // d alpha_k / d g_i = d_ad_phi_k * dphi_k/dsdf * w_k[i] + d_ad_phi_k1 * dphi_k1/dsdf * w_k1[i]
+                        #pragma unroll
+                        for (int ii=0; ii<8; ++ii) {
+                            each_dI_dgeo_params[kk][ii] += d_ad_phi_k  * dphi_k_dsdf  * wk[ii]
+                                                    + d_ad_phi_k1 * dphi_k1_dsdf * wk1[ii];
+                        }
+                    }
+                }
                 
             }
             else{
@@ -578,7 +635,7 @@ renderCUDA(
             {
                 float dval;
                 float dLdepth_dI[n_samp];
-                if ((n_samp == 3 || n_samp == 2) && density_mode != DENSITY_SDF)
+                if (n_samp == 3 || n_samp == 2) 
                 {
                     if (n_samp == 3)
                     {
@@ -588,9 +645,17 @@ renderCUDA(
                         float t1 = a + 1.5f * step_sz;
                         float t2 = a + 2.5f * step_sz;
                         dval = a0*t0 + (1.f-a0)*a1*t1 + (1.f-a0)*(1.f-a1)*a2*t2;
-                        dLdepth_dI[0] = dL_dD * T * (t0 + a1*a2*t2 - a1*t1 - a2*t2) * (1.f - a0);
-                        dLdepth_dI[1] = dL_dD * T * (t1 + a0*a2*t2 - a0*t1 - a2*t2) * (1.f - a1);
-                        dLdepth_dI[2] = dL_dD * T * (t2 + a0*a1*t2 - a0*t2 - a1*t2) * (1.f - a2);
+                        if constexpr (density_mode == DENSITY_SDF) {
+                            // ∂L/∂α_k 만 필요 (∂α/∂g는 each_dI_dgeo_params에 이미 반영)
+                            dLdepth_dI[0] = dL_dD * T * (t0 + a1*a2*t2 - a1*t1 - a2*t2);          // no *(1-a0)
+                            dLdepth_dI[1] = dL_dD * T * (t1 + a0*a2*t2 - a0*t1 - a2*t2);          // no *(1-a1)
+                            dLdepth_dI[2] = dL_dD * T * (t2 + a0*a1*t2 - a0*t2 - a1*t2);          // no *(1-a2)
+                        } else {
+                            // ∂L/∂I_k 가 되어야 하므로 ∂α/∂I_k = (1 - a_k) 포함
+                            dLdepth_dI[0] = dL_dD * T * (t0 + a1*a2*t2 - a1*t1 - a2*t2) * (1.f - a0);
+                            dLdepth_dI[1] = dL_dD * T * (t1 + a0*a2*t2 - a0*t1 - a2*t2) * (1.f - a1);
+                            dLdepth_dI[2] = dL_dD * T * (t2 + a0*a1*t2 - a0*t2 - a1*t2) * (1.f - a2);
+                        }
                     }
                     else if (n_samp == 2)
                     {
@@ -599,20 +664,31 @@ renderCUDA(
                         float t0 = a + 0.5f * step_sz;
                         float t1 = a + 1.5f * step_sz;
                         dval = a0*t0 + (1.f-a0)*a1*t1;
-                        dLdepth_dI[0] = dL_dD * T * (t0 - a1*t1) * (1.f - a0);
-                        dLdepth_dI[1] = dL_dD * T * (t1 - a0*t1) * (1.f - a1);
+                        if constexpr (density_mode == DENSITY_SDF) {
+                            dLdepth_dI[0] = dL_dD * T * (t0 - a1*t1);                  // no *(1-a0)
+                            dLdepth_dI[1] = dL_dD * T * (t1 - a0*t1);                  // no *(1-a1)
+                        } else {
+                            dLdepth_dI[0] = dL_dD * T * (t0 - a1*t1) * (1.f - a0);
+                            dLdepth_dI[1] = dL_dD * T * (t1 - a0*t1) * (1.f - a1);
+                        }    
                     }
                 }
                 else
                 {
                     float t0 = 0.5f * (a + b);
                     dval = alpha * t0;
-                    dLdepth_dI[0] = dL_dD * T * t0 * (1.f - alpha);
+                    if constexpr (density_mode == DENSITY_SDF) {
+                        // ∂L/∂α 로 사용 (entry/exit에서 ∂α/∂g 직접 곱해줌)
+                        dLdepth_dI[0] = dL_dD * T * t0;                        // no *(1 - alpha)
+                    } else {
+                        // ∂L/∂I 로 사용
+                        dLdepth_dI[0] = dL_dD * T * t0 * (1.f - alpha);
+                    }
                 }
 
                 last_dL_dT += dL_dD * dval;
 
-                if ((n_samp == 3 || n_samp == 2) && density_mode != DENSITY_SDF)
+                if ((n_samp == 3 || n_samp == 2) )
                 {
                     if (n_samp == 3)
                     {
@@ -630,8 +706,16 @@ renderCUDA(
                 }
                 else
                 {
-                    for (int iii=0; iii<8; ++iii)
-                        dL_dgeo_params[iii] += dLdepth_dI[0] * dI_dgeo_params[iii];
+                    if (density_mode == DENSITY_SDF) {
+                        // dLdepth_dI[0]는 dL/d(alpha) 역할
+                        for (int i=0; i<8; ++i) {
+                            dL_dgeo_params[i] += dLdepth_dI[0] * ( d_alpha_d_entry * interp_w_entry[i]
+                                                                + d_alpha_d_exit  * interp_w_exit[i] );
+                        }
+                    } else{
+                        for (int iii=0; iii<8; ++iii)
+                            dL_dgeo_params[iii] += dLdepth_dI[0] * dI_dgeo_params[iii];
+                    }
                 }
             }
 

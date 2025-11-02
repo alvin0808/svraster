@@ -168,7 +168,7 @@ class SVAdaptive:
             octlevel,
             self.scene_center,
             self.scene_extent)
-
+        #자식들의 ocpath, octlevel, center, size를 생성해서 특별 취급함.
         special_subdiv = dict(
             octpath=octpath,
             octlevel=octlevel,

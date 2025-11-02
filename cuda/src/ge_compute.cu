@@ -16,11 +16,13 @@ __global__ void grid_eikonal_kernel(
     const int64_t* __restrict__ vox_key,     // [N, 8]
     const int32_t* __restrict__ grid_keys,    // [G]
     const int32_t* __restrict__ grid2voxel,   // [G]
+    const int32_t* __restrict__  active_list, // [A]
     const int32_t grid_res,                       // grid resolution
     const bool* __restrict__ grid_mask,       // [grid_res³]
     const float* __restrict__ voxel_coords,   // [N, 3]
     const float* __restrict__ voxel_sizes,    // [N]
     const int M,                              // number of grid points
+    const int A,                              // number of active grid points
     const int num_voxels,                     // number of voxels
     const int grid_pts_size,                  // size of grid points
     const float weight,
@@ -28,7 +30,7 @@ __global__ void grid_eikonal_kernel(
     float* __restrict__ grid_pts_grad         // [M, 1]
 ){
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= M) return;
+    if (tid >= A) return;
     /*
     int vox_id = grid2voxel[tid];
     int64_t grid_pts_idx[8];
@@ -57,7 +59,7 @@ __global__ void grid_eikonal_kernel(
     }*/
     
     //if(voxel_sizes[grid2voxel[tid]] > 2.0f) return;
-    int gk = grid_keys[tid];
+    int gk = grid_keys[active_list[tid]];
     int x = gk % grid_res;
     int y = (gk / grid_res) % grid_res;
     int z = gk / (grid_res * grid_res);
@@ -124,6 +126,7 @@ void grid_eikonal_bw(
     const torch::Tensor& grid_mask,
     const torch::Tensor& grid_keys,
     const torch::Tensor& grid2voxel,
+    const torch::Tensor& active_list,
     const float weight,
     const float vox_size_inv,
     const bool no_tv_s,
@@ -132,8 +135,9 @@ void grid_eikonal_bw(
 ) {
     // Launch CUDA kernel
     const int M = grid_keys.size(0);
+    const int A = active_list.size(0);
     const int threads = 256;
-    const int blocks = (M + threads - 1) / threads;
+    const int blocks = (A + threads - 1) / threads;
     int num_voxels = vox_key.size(0);
     int grid_pts_size = grid_pts.size(0);
     grid_eikonal_kernel<<<blocks, threads>>>(
@@ -141,11 +145,13 @@ void grid_eikonal_bw(
         vox_key.contiguous().data_ptr<int64_t>(),
         grid_keys.contiguous().data_ptr<int32_t>(),
         grid2voxel.contiguous().data_ptr<int32_t>(),
+        active_list.contiguous().data_ptr<int32_t>(),
         grid_res,
         grid_mask.contiguous().data_ptr<bool>(),
         grid_voxel_coord.contiguous().data_ptr<float>(),
         grid_voxel_size.contiguous().data_ptr<float>(),
         M,
+        A,
         num_voxels,
         grid_pts_size,
         weight,
