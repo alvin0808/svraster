@@ -47,6 +47,7 @@ def rasterize_voxels(
         vox_centers: torch.Tensor,
         vox_lengths: torch.Tensor,
         vox_fn,
+        is_leaf: torch.Tensor,
     ):
 
     # Some input checking
@@ -62,7 +63,7 @@ def rasterize_voxels(
 
     N = octree_paths.numel()
     device = octree_paths.device
-
+    
     if vox_centers.shape[0] != N or vox_lengths.numel() != N:
         raise Exception("Size mismatched.")
     if len(vox_centers.shape) != 2 or vox_centers.shape[1] != 3:
@@ -92,17 +93,18 @@ def rasterize_voxels(
         octree_paths,
         vox_centers,
         vox_lengths,
+        is_leaf,
 
         raster_settings.debug,
     )
     #n_duplicates: [N], number of duplicates for each voxel
-    #geomBuffer: voxel?´ ì¹´ë©”?¼ ?”„?Ÿ¬?Š¤????˜ ?–´?Š ?‚¬ë¶„ë©´?— ?†?•˜?Š”ì§?, ë³µì???˜ screen-space bounding box ? •ë³? ?“±
+    #geomBuffer: voxel?ï¿½ï¿½ ì¹´ë©”?ï¿½ï¿½ ?ï¿½ï¿½?ï¿½ï¿½?ï¿½ï¿½????ï¿½ï¿½ ?ï¿½ï¿½?ï¿½ï¿½ ?ï¿½ï¿½ë¶„ë©´?ï¿½ï¿½ ?ï¿½ï¿½?ï¿½ï¿½?ï¿½ï¿½ï¿½?, ë³µï¿½???ï¿½ï¿½ screen-space bounding box ?ï¿½ï¿½ï¿½? ?ï¿½ï¿½
     in_frusts_idx = torch.where(n_duplicates > 0)[0] 
 
     # Forward voxel parameters
     cam_pos = raster_settings.c2w_matrix[:3, 3]
     vox_params = vox_fn(in_frusts_idx, cam_pos, raster_settings.color_mode)
-    #?˜„?ž¬ ì¹´ë©”?¼ ë·°ì— ????•´, ê°? ?™œ?„±?™”?œ voxel?“¤?˜ geometry(geos)??? ?ƒ‰?ƒ(rgbs)?„ ê³„ì‚°?•´?„œ ?”•?…”?„ˆë¦? ?˜•?ƒœë¡? ?„˜ê²¨ì£¼?Š” ?—­?• 
+    #?ï¿½ï¿½?ï¿½ï¿½ ì¹´ë©”?ï¿½ï¿½ ë·°ì— ????ï¿½ï¿½, ï¿½? ?ï¿½ï¿½?ï¿½ï¿½?ï¿½ï¿½?ï¿½ï¿½ voxel?ï¿½ï¿½?ï¿½ï¿½ geometry(geos)??? ?ï¿½ï¿½?ï¿½ï¿½(rgbs)?ï¿½ï¿½ ê³„ì‚°?ï¿½ï¿½?ï¿½ï¿½ ?ï¿½ï¿½?ï¿½ï¿½?ï¿½ï¿½ï¿½? ?ï¿½ï¿½?ï¿½ï¿½ï¿½? ?ï¿½ï¿½ê²¨ì£¼?ï¿½ï¿½ ?ï¿½ï¿½?ï¿½ï¿½
     geos = vox_params['geos']
     rgbs = vox_params['rgbs']
     subdiv_p = vox_params['subdiv_p']
@@ -291,7 +293,7 @@ class _RasterizeVoxels(torch.autograd.Function):
             dL_drgbs, # => rgbs
             None, # => vox_feats
             subdiv_p_bw, # => subdivision priority
-            dL_ds_val.view_as(s_val), # ?™•? •?•„?‹˜
+            dL_ds_val.view_as(s_val), # ?ï¿½ï¿½?ï¿½ï¿½?ï¿½ï¿½?ï¿½ï¿½
         )
 
         return grads
@@ -441,8 +443,12 @@ def mark_n_duplicates(
         octree_paths, vox_centers, vox_lengths,
         cam_mode="persp",
         return_buffer=False,
-        debug=False):
-
+        debug=False,
+        is_leaf: torch.Tensor = None):
+    device = octree_paths.device
+    N = octree_paths.numel()
+    if is_leaf is None:
+        is_leaf = torch.ones(N, dtype=torch.uint8, device=device)
     n_duplicates, geomBuffer = _C.rasterize_preprocess(
         image_width,
         image_height,
@@ -458,6 +464,7 @@ def mark_n_duplicates(
         octree_paths,
         vox_centers,
         vox_lengths,
+        is_leaf,
 
         debug,
     )

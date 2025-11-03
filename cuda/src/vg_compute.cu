@@ -23,152 +23,56 @@ namespace VG_COMPUTE {
 __global__ void voxel_gradient_kernel(
     const float* __restrict__ grid_pts,       // [M, 1]
     const int64_t* __restrict__ vox_key,     // [N, 8]
-    const int32_t* __restrict__ grid_keys,    // [G]
-    const int32_t* __restrict__ grid2voxel,   // [G]
-    const int32_t grid_res,                       // grid resolution
-    const bool* __restrict__ grid_mask,       // [grid_res³]
-    const float* __restrict__ voxel_coords,   // [N, 3]
-    const float* __restrict__ voxel_sizes,    // [N]
-    const int M,                              // number of grid points
-    const int num_voxels,                     // number of voxels
-    const int grid_pts_size,                  // size of grid points
+    const float* __restrict__ vox_size_inv,    // [N]
+    const int32_t* __restrict__  active_list, // [A]
+    const int A,                              // number of active grid points
     const float weight,
-    const float vox_size_inv,
     float* __restrict__ grid_pts_grad         // [M, 1]
 ){
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (tid >= M) return;
-    if(voxel_sizes[grid2voxel[tid]] > 2.0f) return;
-    /*
-    int gk = grid_keys[tid];
-    int x = gk % grid_res;
-    int y = (gk / grid_res) % grid_res;
-    int z = gk / (grid_res * grid_res);
-    if (!grid_mask[gk] || !check_valid_neighbors(x, y, z, grid_res, grid_mask)) return;
+    if (tid >= A) return;
 
-    int vox_id = grid2voxel[tid];
-    int64_t grid_pts_idx[8];
-    float sdfs[8];
-    float3 grad = make_float3(0.0f, 0.0f, 0.0f);
-    float w[8][3];
-    int seed = (int)clock64();
-    float3 randv=get_rand_vec(tid, seed);
-    
-    tri_interp_grad_weight(randv, w);
-    for(int i=0;i<8;i++){
-        grid_pts_idx[i] = vox_key[vox_id * 8 + i];
-        sdfs[i]=grid_pts[grid_pts_idx[i]];
-        grad.x += w[i][0]*sdfs[i];
-        grad.y += w[i][1]*sdfs[i];
-        grad.z += w[i][2]*sdfs[i];
-    }
-    float adj_sdfs[6];
-    int adj_vox_id[6];
-    float adj_w[6][8];
-    int dx[6] = {+1, -1, 0, 0, 0, 0};
-    int dy[6] = {0, 0, +1, -1, 0, 0};
-    int dz[6] = {0, 0, 0, 0, +1, -1};
-    randv=get_rand_vec(tid, seed*2);
-    for (int i = 0; i < 6; ++i) {
-        adj_sdfs[i] = interpolate_sdf_and_grad(M,
-            x + dx[i], y + dy[i], z + dz[i],
-            grid_keys, grid2voxel,
-            voxel_coords, voxel_sizes,
-            vox_key, grid_pts, grid_res,
-            num_voxels, grid_pts_size,
-            adj_w[i], adj_vox_id[i],randv);
-    }
-    //if(grid_res == 128) printf("ok");
+    const int v = active_list[tid];   // voxel id
+    const float inv4h = 0.25f * vox_size_inv[v]; // 1/(4h)
 
-    float dx_val = (adj_sdfs[0] - adj_sdfs[1]) *0.5f;
-    float dy_val = (adj_sdfs[2] - adj_sdfs[3]) *0.5f;
-    float dz_val = (adj_sdfs[4] - adj_sdfs[5]) *0.5f;
-    float dx_diff = grad.x-dx_val;
-    float dy_diff = grad.y-dy_val;
-    float dz_diff = grad.z-dz_val;
-    float grad_coeff = 2.0f * weight * vox_size_inv;
-    float dL_dgx = grad_coeff * dx_diff;
-    float dL_dgy = grad_coeff * dy_diff;
-    float dL_dgz = grad_coeff * dz_diff;
-    for (int i = 0; i < 8; ++i) {
-        float g = dL_dgx * w[i][0] + dL_dgy * w[i][1] + dL_dgz * w[i][2];
-        atomicAdd(&grid_pts_grad[grid_pts_idx[i]], g);
-    }
-    accumulate_grad(adj_vox_id[0], num_voxels, vox_key, adj_w[0], -dL_dgx, grid_pts_grad);
-    accumulate_grad(adj_vox_id[1], num_voxels,vox_key, adj_w[1], dL_dgx, grid_pts_grad);
-    accumulate_grad(adj_vox_id[2], num_voxels,vox_key, adj_w[2], -dL_dgy, grid_pts_grad);
-    accumulate_grad(adj_vox_id[3], num_voxels,vox_key, adj_w[3], dL_dgy, grid_pts_grad);
-    accumulate_grad(adj_vox_id[4], num_voxels,vox_key, adj_w[4], -dL_dgz, grid_pts_grad);
-    accumulate_grad(adj_vox_id[5], num_voxels,vox_key, adj_w[5], dL_dgz, grid_pts_grad);
-    */
-    
-    int gk = grid_keys[tid];
-    int x = gk % grid_res;
-    int y = (gk / grid_res) % grid_res;
-    int z = gk / (grid_res * grid_res);
-    if (!grid_mask[gk] ) return;   
-    if ( x >= grid_res - 1 || y >= grid_res - 1 || z >= grid_res - 1)
-        return;
-    if(!(grid_mask[flatten_grid_key(x+1, y, z, grid_res)] && grid_mask[flatten_grid_key(x, y+1, z, grid_res)] &&grid_mask[flatten_grid_key(x, y, z+1, grid_res)]) )
-        return;
-    float w[8][3];
+    // Corner order is: [000,001,010,011,100,101,110,111]
+    // Precomputed sign tables for (2*bx-1), (2*by-1), (2*bz-1) in that order:
+    const float sx[8] = {-1.f,-1.f,-1.f,-1.f, +1.f,+1.f,+1.f,+1.f};
+    const float sy[8] = {-1.f,-1.f, +1.f, +1.f, -1.f,-1.f, +1.f, +1.f};
+    const float sz[8] = {-1.f, +1.f,-1.f, +1.f, -1.f, +1.f,-1.f, +1.f};
 
-    int dx[3] = {+1, 0, 0};
-    int dy[3] = {0, +1, 0};
-    int dz[3] = {0, 0, +1};
-    int seed = (int)clock64();
-    float3 randv=get_rand_vec(tid, seed);
-    int vox_id[4];
-    vox_id[0] = grid2voxel[tid];
-    for(int i=0;i<3;i++){
-        int gk = flatten_grid_key(x+dx[i], y+dy[i], z+dz[i], grid_res);
-        int idx = binary_search(grid_keys, M , gk);
-        vox_id[i+1] = grid2voxel[idx];
-    }
-    tri_interp_grad_weight(randv, w);
-    float grad[4][3];
+    // 1) Load SDF at the 8 corners
+    float S[8];
     #pragma unroll
-    for (int i = 0; i < 4; ++i)
-        grad[i][0] = grad[i][1] = grad[i][2] = 0.0f;
-    for(int i=0;i<4;i++){
-        int64_t grid_pts_idx[8];
-        float sdfs[8];
-        for(int j=0;j<8;j++){
-            grid_pts_idx[j] = vox_key[vox_id[i]*8+j];
-            sdfs[j]=grid_pts[grid_pts_idx[j]];
-            grad[i][0] += w[j][0]*sdfs[j];
-            grad[i][1] += w[j][1]*sdfs[j];
-            grad[i][2] += w[j][2]*sdfs[j];
-        }
-    } 
-    //float grad_diff[3];
-    //grad_diff[0] = (grad[0][0] - grad[1][0])*(grad[0][0] - grad[1][0]) + (grad[0][1] - grad[1][1])*(grad[0][1]- grad[1][1]) + (grad[0][2] - grad[1][2])*(grad[0][2] - grad[1][2]);  
-    //grad_diff[1] = (grad[0][0] - grad[2][0])*(grad[0][0] - grad[2][0]) + (grad[0][1] - grad[2][1])*(grad[0][1]- grad[2][1]) + (grad[0][2] - grad[2][2])*(grad[0][2] - grad[2][2]);
-    //grad_diff[2] = (grad[0][0] - grad[3][0])*(grad[0][0] - grad[3][0]) + (grad[0][1] - grad[3][1])*(grad[0][1]- grad[3][1]) + (grad[0][2] - grad[3][2])*(grad[0][2] - grad[3][2]);
-    for (int d = 0; d < 3; ++d) {
-        float diff = grad[0][d] - grad[1][d];
-        float coeff = 2.f * diff * weight *vox_size_inv;
-        for (int j = 0; j < 8; ++j) {
-            atomicAdd(&grid_pts_grad[vox_key[vox_id[0] * 8 + j]], coeff * w[j][d]/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]]);
-            atomicAdd(&grid_pts_grad[vox_key[vox_id[1] * 8 + j]], -coeff * w[j][d]/voxel_sizes[vox_id[1]]/voxel_sizes[vox_id[1]]/voxel_sizes[vox_id[1]]);
-        }
-
-        diff = grad[0][d] - grad[2][d];
-        coeff = 2.f * diff * weight*vox_size_inv;
-        for (int j = 0; j < 8; ++j) {
-            atomicAdd(&grid_pts_grad[vox_key[vox_id[0] * 8 + j]], coeff * w[j][d]/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]]);
-            atomicAdd(&grid_pts_grad[vox_key[vox_id[2] * 8 + j]], -coeff * w[j][d]/voxel_sizes[vox_id[2]]/voxel_sizes[vox_id[2]]/voxel_sizes[vox_id[2]]);
-        }
-
-        diff = grad[0][d] - grad[3][d];
-        coeff = 2.f * diff * weight*vox_size_inv;
-        for (int j = 0; j < 8; ++j) {
-            atomicAdd(&grid_pts_grad[vox_key[vox_id[0] * 8 + j]], coeff * w[j][d]/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]]/voxel_sizes[vox_id[0]]);
-            atomicAdd(&grid_pts_grad[vox_key[vox_id[3] * 8 + j]], -coeff * w[j][d]/voxel_sizes[vox_id[3]]/voxel_sizes[vox_id[3]]/voxel_sizes[vox_id[3]]);
-        }
+    for (int i=0;i<8;++i){
+        const int64_t gidx = vox_key[v*8 + i];
+        S[i] = grid_pts[gidx];
     }
 
-    
+    // 2) Gradient at voxel center via 4-edge-avg central differences
+    float gx = 0.f, gy = 0.f, gz = 0.f;
+    #pragma unroll
+    for (int i=0;i<8;++i){
+        gx += sx[i] * S[i];
+        gy += sy[i] * S[i];
+        gz += sz[i] * S[i];
+    }
+    gx *= inv4h; gy *= inv4h; gz *= inv4h;
+
+    // 3) Eikonal loss gradient: L = (||g||^2 - 1)^2
+    const float g2 = gx*gx + gy*gy + gz*gz;
+    const float dL_scale = 4.f * (g2 - 2.f) * weight ; // dL/dg = 4 (g^2-1) g
+    const float dLdgx = dL_scale * gx;
+    const float dLdgy = dL_scale * gy;
+    const float dLdgz = dL_scale * gz;
+
+    // 4) Chain rule to corner SDFs:
+    // dL/dS[i] = dL/dg · ∂g/∂S[i] = (dLdgx*sx[i] + dLdgy*sy[i] + dLdgz*sz[i]) * (1/(4h))
+    #pragma unroll
+    for (int i=0;i<8;++i){
+        const float dLdSi = (dLdgx * sx[i] + dLdgy * sy[i] + dLdgz * sz[i]) * inv4h;
+        atomicAdd(grid_pts_grad+ vox_key[v*8 + i] , dLdSi);
+    }
 
 }
 
@@ -176,38 +80,24 @@ __global__ void voxel_gradient_kernel(
 void voxel_gradient_bw(
     const torch::Tensor& grid_pts,
     const torch::Tensor& vox_key,
-    const torch::Tensor& grid_voxel_coord,
-    const torch::Tensor& grid_voxel_size,
-    const int32_t grid_res,
-    const torch::Tensor& grid_mask,
-    const torch::Tensor& grid_keys,
-    const torch::Tensor& grid2voxel,
+    const torch::Tensor& vox_size_inv,
+    const torch::Tensor& active_list,
     const float weight,
-    const float vox_size_inv,
     const bool no_tv_s,
     const bool tv_sparse,
     const torch::Tensor& grid_pts_grad
 ) {
     // Launch CUDA kernel
-    const int M = grid_keys.size(0);
+    const int A = active_list.size(0);
     const int threads = 256;
-    const int blocks = (M + threads - 1) / threads;
-    int num_voxels = vox_key.size(0);
-    int grid_pts_size = grid_pts.size(0);
+    const int blocks = (A + threads - 1) / threads;
     voxel_gradient_kernel<<<blocks, threads>>>(
         grid_pts.contiguous().data_ptr<float>(),
         vox_key.contiguous().data_ptr<int64_t>(),
-        grid_keys.contiguous().data_ptr<int32_t>(),
-        grid2voxel.contiguous().data_ptr<int32_t>(),
-        grid_res,
-        grid_mask.contiguous().data_ptr<bool>(),
-        grid_voxel_coord.contiguous().data_ptr<float>(),
-        grid_voxel_size.contiguous().data_ptr<float>(),
-        M,
-        num_voxels,
-        grid_pts_size,
+        vox_size_inv.contiguous().data_ptr<float>(),
+        active_list.contiguous().data_ptr<int32_t>(),
+        A,
         weight,
-        vox_size_inv,
         grid_pts_grad.contiguous().data_ptr<float>()
     );
 }

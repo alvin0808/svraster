@@ -32,6 +32,7 @@ class SVInOut:
             '_sh0': self._sh0.data.contiguous(),
             '_shs': self._shs.data.contiguous(),
             '_log_s': self._log_s.data.contiguous(),
+            'is_leaf': self.is_leaf.data.contiguous(),
         }
 
         if quantize:
@@ -72,6 +73,7 @@ class SVInOut:
         self._sh0 = state_dict['_sh0'].cuda().requires_grad_()
         self._shs = state_dict['_shs'].cuda().requires_grad_()
         self._log_s = state_dict['_log_s'].cuda().requires_grad_()
+        self.is_leaf = state_dict['is_leaf'].cuda()
 
         N = len(self.octpath)
         self._subdiv_p = torch.full([N, 1], 1.0, dtype=torch.float32, device="cuda").requires_grad_()

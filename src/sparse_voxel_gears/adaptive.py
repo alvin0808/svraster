@@ -57,12 +57,16 @@ class SVAdaptive:
         # Compute voxel index to keep and to subdivided
         if len(subdivide_mask.shape) == 2:
             subdivide_mask = subdivide_mask.squeeze(1)
-        kept_idx = (~subdivide_mask).argwhere().squeeze(1)
+        depth_rel = self.octlevel.squeeze(1) - self.outside_level
+        parent_keep_mask = subdivide_mask & (depth_rel >= 9)
+        kept_mask = (~subdivide_mask) | parent_keep_mask
+        kept_idx = kept_mask.nonzero(as_tuple=False).flatten()
         subdivide_idx = subdivide_mask.argwhere().squeeze(1)
+        parent_idx = parent_keep_mask.argwhere().squeeze(1)
 
         # Subdivided the selected voxels into their eight octants
         self.clear_optimizer_states()
-        self._subdivide_attr(kept_idx, subdivide_idx)
+        self._subdivide_attr(kept_idx, subdivide_idx, parent_idx)
         self._subdivide_voxel_parameters(kept_idx, subdivide_idx)
         self._subdivide_grid_pts_parameters(kept_idx, subdivide_idx, save_gpu=save_gpu)
         self.renew_optimizer_states()
@@ -153,7 +157,7 @@ class SVAdaptive:
             torch.cuda.empty_cache()
 
     @torch.no_grad()
-    def _subdivide_attr(self, kept_idx, subdivide_idx):
+    def _subdivide_attr(self, kept_idx, subdivide_idx, parent_idx):
         '''
         Subdivide non-trainable per-voxel attributes.
         Input:
@@ -175,11 +179,13 @@ class SVAdaptive:
             vox_center=vox_center,
             vox_size=vox_size,
         )
-
         for name in self.per_voxel_attr_lst:
             ori_attr = getattr(self, name)
             if name in special_subdiv:
                 subdiv_attr = special_subdiv.pop(name)
+            elif name == 'is_leaf':
+                ori_attr[parent_idx] = False
+                subdiv_attr= torch.ones_like(ori_attr[subdivide_idx]).repeat_interleave(8, dim=0)
             else:
                 subdiv_attr = ori_attr[subdivide_idx].repeat_interleave(8, dim=0)
             new_attr = mask_cat_perm(

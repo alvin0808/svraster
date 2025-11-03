@@ -129,9 +129,9 @@ cfg.regularizer = CfgNode(dict(
 
     lambda_pi3_normal = 0.1,
     pi3_normal_from=0,
-    pi3_normal_end=2500,
-    pi3_normal_decay_every=4000,
-    pi3_normal_decay_mult=0.5,
+    pi3_normal_end=4000,
+    pi3_normal_decay_every=2000,
+    pi3_normal_decay_mult=1.0,
 
     # Total variation loss of density grid
     lambda_tv_density = 1e-8,
@@ -141,12 +141,13 @@ cfg.regularizer = CfgNode(dict(
     tv_decay_mult = 0.8,
     tv_sparse = False,
 
-    lambda_vg_density = 1e-10,
-    vg_from = 0,
-    vg_until = 3000,
+    lambda_vg_density = 1e-11,
+    vg_from = 6000,
+    vg_until = 8000,
     vg_decay_every = 2000,
-    vg_decay_mult = 0.5,
+    vg_decay_mult = 0.25,
     vg_sparse = False,
+    vg_drop_ratio = 0.5,
 
     lambda_ge_density = 2e-8,
     ge_from = 0,
@@ -154,15 +155,15 @@ cfg.regularizer = CfgNode(dict(
     ge_decay_every = 2000,
     ge_decay_mult = 0.25,
     ge_sparse = False,
-    ge_drop_ratio = 0.5,
+    ge_drop_ratio = 0.0,
 
-    lambda_ls_density = 2e-10,
+    lambda_ls_density = 1e-10,
     ls_from = 0,
-    ls_until = 6000,
+    ls_until = 8000,
     ls_decay_every = 2000,
     ls_decay_mult = 0.25,
     ls_sparse = False,
-    ls_drop_ratio = 0.5,
+    ls_drop_ratio = 0.0,
 
     lambda_points_density = 0.00000,
     points_loss_from = 0,

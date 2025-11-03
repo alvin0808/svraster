@@ -48,7 +48,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> valid_gradient_table(
     const at::Tensor& vox_size,        // [N, 1], float32
     const at::Tensor& scene_center,    // [3], float32
     float inside_extent,        // scalar
-    int grid_res_pow2           // int, we will do 2 ** grid_res_pow2 in C++
+    int grid_res_pow2,           // int, we will do 2 ** grid_res_pow2 in C++
+    const at::Tensor& is_leaf         // [N, 1], bool
 );
 }
 #endif

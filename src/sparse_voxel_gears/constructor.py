@@ -70,7 +70,8 @@ class SVConstructor:
 
         self.vox_center, self.vox_size = octree_utils.octpath_decoding(
             self.octpath, self.octlevel, self.scene_center, self.scene_extent)
-
+        N = len(self.octpath)
+        self.is_leaf = torch.ones([N, 1], dtype=torch.bool, device="cuda")
         # Show statistic
         inside_min = self.scene_center - 0.5 * self.inside_extent
         inside_max = self.scene_center + 0.5 * self.inside_extent
@@ -146,7 +147,7 @@ class SVConstructor:
             _geo_grid_pts[outside_mask] = torch.empty_like(dist[outside_mask]).uniform_(self.inside_extent.item()*0.617, self.inside_extent.item()*0.867)
         elif mode ==2:
             if hasattr(self, 'model_path') and self.model_path:
-                # exist_ok=True ¿É¼ÇÀº µð·ºÅä¸®°¡ ÀÌ¹Ì Á¸ÀçÇØµµ ¿¡·¯¸¦ ¹ß»ý½ÃÅ°Áö ¾Ê½À´Ï´Ù.
+                # exist_ok=True ï¿½É¼ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ä¸®ï¿½ï¿½ ï¿½Ì¹ï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½Øµï¿½ ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½ß»ï¿½ï¿½ï¿½Å°ï¿½ï¿½ ï¿½Ê½ï¿½ï¿½Ï´ï¿½.
                 os.makedirs(self.model_path, exist_ok=True)
                 print(f"Ensured output directory exists: {self.model_path}")
             # ==========================================================
@@ -160,7 +161,7 @@ class SVConstructor:
                 scene_center=self.scene_center,
                 scene_extent=self.scene_extent,
                 voxel_size=self.vox_size.min(),
-                debug_ply_output_path=debug_ply_output_path  # <<<< voxel_size Àü´Þ!
+                debug_ply_output_path=debug_ply_output_path  # <<<< voxel_size ï¿½ï¿½ï¿½ï¿½!
             )
         _rgb = torch.full([N, 3], cfg_init.sh0_init, dtype=torch.float32, device="cuda")
         
@@ -181,7 +182,7 @@ class SVConstructor:
         self.bg_color = torch.tensor(
             [1, 1, 1] if self.white_background else [0, 0, 0],
             dtype=torch.float32, device="cuda")
-        self.grid_mask, self.grid_keys, self.grid2voxel = octree_utils.update_valid_gradient_table(cfg_mode, self.vox_center, self.vox_size, self.scene_center, self.inside_extent, cfg_init.init_n_level)
+        self.grid_mask, self.grid_keys, self.grid2voxel = octree_utils.update_valid_gradient_table(cfg_mode, self.vox_center, self.vox_size, self.scene_center, self.inside_extent, cfg_init.init_n_level, self.is_leaf)
     
 
 

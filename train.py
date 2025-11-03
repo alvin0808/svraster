@@ -184,7 +184,7 @@ def training(args):
     #initial the logs value, criteria=99% 
     device = voxel_model._log_s.device
     dtype  = voxel_model._log_s.dtype
-    learning_thickness = 2
+    learning_thickness = 2.0
     vsmi = torch.as_tensor(vox_size_min_inv, device=device, dtype=dtype)
     init = 0.1 * torch.log(
         torch.log(torch.tensor(99.0, device=device, dtype=dtype)) * vsmi / learning_thickness/2
@@ -338,9 +338,9 @@ def training(args):
         loss_dict = {"photo": loss_photo}
         '''
         # Loss
-        #gt_mask = cam.mask.cuda() 
+        gt_mask = cam.mask.cuda() 
 
-        gt_image_modified = gt_image #* gt_mask
+        gt_image_modified = gt_image *gt_mask
 
         mse = loss_utils.l2_loss(render_image, gt_image_modified)
 
@@ -420,7 +420,8 @@ def training(args):
             loss += loss_nmed_loss
             loss_dict["nmed_loss"] = loss_nmed_loss
         if need_pi3_normal_loss: #pi3 normal loss(render_pkg['normal']->ray 占쎈쎗占쎈젻泳��떑�젂�뜝占� weight rendering)
-            loss_pi3_normal = cfg.regularizer.lambda_pi3_normal * pi3_normal_loss(cam, render_pkg, iteration)
+            lambda_pi3_mult = cfg.regularizer.pi3_normal_decay_mult ** (iteration // cfg.regularizer.pi3_normal_decay_every)
+            loss_pi3_normal = cfg.regularizer.lambda_pi3_normal *lambda_pi3_mult* pi3_normal_loss(cam, render_pkg, iteration)
             loss += loss_pi3_normal
             loss_dict["pi3_normal_loss"] = loss_pi3_normal
         # lambda_R_concen loss? render_opt? 濚욌꼬�눊�꽠占쎈쑏�뜝占�? (�뜝�룞�삕占쎌돵占쎈㎥占쎈첓 ray 占쎌녃域뱄퐢荑덂뜝�럩援�?? �뜝�룞�삕占쎌돵占쎈㎥占쎈첓 癲ル슓堉곁땟怨살삕��억옙 l2 loss)
@@ -449,13 +450,13 @@ def training(args):
 
 
         loss.backward()
+        '''
         if iteration % 100 == 0:
             g = voxel_model._geo_grid_pts.grad
             print(f"[iter {iteration}] geo_grad_norm = {g.norm().item():.4e}")
             if torch.isnan(g).any() or torch.isinf(g).any():
                 bad_idx = torch.where(torch.isnan(g) | torch.isinf(g))
                 print(f"   占쎌뒔�닼占� NaN/Inf in grad at indices: {bad_idx}")
-                # PyTorch �뤃�됱쒔占쎌읈 占쎌깈占쎌넎 min/max
                 g_no_nan = g[~torch.isnan(g)]
                 g_no_nan = g_no_nan[~torch.isinf(g_no_nan)]
                 if g_no_nan.numel() > 0:
@@ -467,6 +468,29 @@ def training(args):
         if iteration % 100 == 0:
             gnorm = voxel_model._geo_grid_pts.grad.norm().item()
             print(f"[iter {iteration}] geo_grad_norm = {gnorm:.4e}")
+        '''
+        if iteration % 100 == 0:
+            with torch.no_grad():
+                # non-leaf 마스크
+                nonleaf_mask = (~voxel_model.is_leaf.view(-1).bool())
+
+                # 레벨 벡터
+                levels = voxel_model.octlevel.view(-1).to(torch.int64)
+
+                # non-leaf들만 레벨별 개수 집계
+                levels_nonleaf = levels[nonleaf_mask]
+                if levels_nonleaf.numel() == 0:
+                    print("  [voxels] non-leaf: 0")
+                else:
+                    uniq_lvls, counts = torch.unique(levels_nonleaf, return_counts=True)
+                    order = torch.argsort(uniq_lvls)
+                    uniq_lvls = uniq_lvls[order].tolist()
+                    counts = counts[order].tolist()
+
+                    total_nonleaf = int(sum(counts))
+                    print(f"  [voxels] non-leaf total: {total_nonleaf}")
+                    for L, C in zip(uniq_lvls, counts):
+                        print(f"    - level {L}: {C}")
         # INSERT_YOUR_CODE
         # 占쎌삏占쎈쐭筌랃옙 png 占쎌뵠占쎄숲占쎌쟿占쎌뵠占쎈�∽쭕�뜄�뼄 占쏙옙占쏙옙�삢
         '''
@@ -532,18 +556,16 @@ def training(args):
         voxel_gradient_interval = iteration >= cfg.regularizer.vg_from and iteration <= cfg.regularizer.vg_until
         if cfg.regularizer.lambda_vg_density and voxel_gradient_interval:
             asdf = voxel_model._geo_grid_pts.grad * 10000
-            lambda_vg_mult = cfg.regularizer.vg_decay_mult ** (iteration // cfg.regularizer.vg_decay_every)
+            G = voxel_model.vox_size_inv.numel()
+            K =  int(G * (1.0 - float(cfg.regularizer.vg_drop_ratio)))
+            active_list = torch.randperm(G, device=voxel_model.vox_key.device)[:K].to(torch.int32).contiguous()
+            lambda_vg_mult = cfg.regularizer.vg_decay_mult ** (iteration // cfg.regularizer.vg_decay_every) * (G / K)
             svraster_cuda.grid_loss_bw.voxel_gradient(
                 grid_pts=voxel_model._geo_grid_pts,
                 vox_key=voxel_model.vox_key,
-                grid_voxel_coord=grid_voxel_coord,
-                grid_voxel_size=grid_voxel_size.view(-1),
-                grid_res= 2**max_voxel_level,
-                grid_mask=voxel_model.grid_mask,
-                grid_keys= voxel_model.grid_keys,
-                grid2voxel=voxel_model.grid2voxel,
+                vox_size_inv = voxel_model.vox_size_inv,
+                active_list=active_list,
                 weight=cfg.regularizer.lambda_vg_density * lambda_vg_mult,
-                vox_size_inv=vox_size_min_inv,
                 no_tv_s=True,
                 tv_sparse=cfg.regularizer.vg_sparse,
                 grid_pts_grad=voxel_model._geo_grid_pts.grad)
@@ -566,10 +588,12 @@ def training(args):
             #     print("Eikonal loss applied (before)")
             asdf = voxel_model._geo_grid_pts.grad * 10000
             # breakpoint()
-            lambda_ge_mult = cfg.regularizer.ge_decay_mult ** (iteration // cfg.regularizer.ge_decay_every)
+            lambda_ge_mult = cfg.regularizer.ge_decay_mult ** min(iteration // cfg.regularizer.ls_decay_every, 2)
             G = voxel_model.grid_keys.numel()
             K =  int(G * (1.0 - float(cfg.regularizer.ls_drop_ratio)))
             active_list = torch.randperm(G, device=voxel_model.grid_keys.device)[:K].to(torch.int32).contiguous()
+            max_voxel_level = min(voxel_model.octlevel.max().item()-cfg.model.outside_level, 9)
+            vox_size_min_inv = 2**max_voxel_level / voxel_model.inside_extent
             svraster_cuda.grid_loss_bw.grid_eikonal(
                 grid_pts=voxel_model._geo_grid_pts,
                 vox_key=voxel_model.vox_key,
@@ -604,10 +628,12 @@ def training(args):
         laplacian_interval = iteration >= cfg.regularizer.ls_from and iteration <= cfg.regularizer.ls_until
         if cfg.regularizer.lambda_ls_density and laplacian_interval:
             asdf = voxel_model._geo_grid_pts.grad * 10000
-            lambda_ls_mult = cfg.regularizer.ls_decay_mult ** (iteration // cfg.regularizer.ls_decay_every)
+            lambda_ls_mult = cfg.regularizer.ls_decay_mult ** min(iteration // cfg.regularizer.ls_decay_every, 2)
             G = voxel_model.grid_keys.numel()
             K =  int(G * (1.0 - float(cfg.regularizer.ls_drop_ratio)))
             active_list = torch.randperm(G, device=voxel_model.grid_keys.device)[:K].to(torch.int32).contiguous()
+            max_voxel_level = min(voxel_model.octlevel.max().item()-cfg.model.outside_level, 9)
+            vox_size_min_inv = 2**max_voxel_level / voxel_model.inside_extent
             svraster_cuda.grid_loss_bw.laplacian_smoothness(
                 grid_pts=voxel_model._geo_grid_pts,
                 vox_key=voxel_model.vox_key,
@@ -857,7 +883,7 @@ def training(args):
             
             subdivide_mask = (rank > thres) & valid_mask
             
-            if cfg.model.density_mode == 'sdf': # SDF 癲ル슢�뀈泳�占썹뛾占썲뜝占�?�뜝�럥�맶�뜝�럥吏쀥뜝�럩援� ?�뜝�럥�맶�뜝�럥吏쀥뜝�럩援�
+            if cfg.model.density_mode == 'sdf' and iteration <6000: # SDF 癲ル슢�뀈泳�占썹뛾占썲뜝占�?�뜝�럥�맶�뜝�럥吏쀥뜝�럩援� ?�뜝�럥�맶�뜝�럥吏쀥뜝�럩援�
                 with torch.no_grad():
                     sdf_vals = voxel_model._geo_grid_pts[voxel_model.vox_key]  # [N, 8, 1]
                     signs = (sdf_vals > 0).float()
@@ -893,6 +919,7 @@ def training(args):
                 subdivide_mask &= (rank > rank[subdivide_mask].sort().values[n_removed-1])
 
             # Subdivision
+            subdivide_mask = subdivide_mask & voxel_model.is_leaf.squeeze(1) & voxel_model.inside_mask
             ori_n = voxel_model.num_voxels
             if subdivide_mask.sum() > 0:
                 voxel_model.subdividing(subdivide_mask, cfg.procedure.subdivide_save_gpu)
@@ -904,10 +931,10 @@ def training(args):
             voxel_model.subdiv_meta.zero_()  # reset subdiv meta
             remain_subdiv_times -= 1
             torch.cuda.empty_cache()
-        if (need_pruning or need_subdividing) and iteration<6000:
-            vox_size_min_inv = 1.0 / voxel_model.vox_size.min().item() 
+        if (need_pruning or need_subdividing) :
+            #vox_size_min_inv = 1.0 / voxel_model.vox_size.min().item() 
             #print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}")
-            max_voxel_level = voxel_model.octlevel.max().item()-cfg.model.outside_level
+            max_voxel_level = min(voxel_model.octlevel.max().item()-cfg.model.outside_level, 9)
             grid_voxel_coord = ((voxel_model.vox_center- voxel_model.vox_size * 0.5)-(voxel_model.scene_center-voxel_model.inside_extent*0.5))/voxel_model.inside_extent*(2**max_voxel_level) #占쎌녃域뱄퐢荑덂뜝�럩援�???�뜝�럥�맶�뜝�럥吏쀥뜝�럩援� �뜝�럥苑욃뜝�럩�뮡嶺뚮쪋�삕
             grid_voxel_coord = torch.round(grid_voxel_coord).float()
             grid_voxel_size = (voxel_model.vox_size / voxel_model.inside_extent) * (2**max_voxel_level) 
@@ -917,7 +944,7 @@ def training(args):
             
             #print(f"voxel_model.vox_size_min_inv = {vox_size_min_inv:.4f}") 
 
-            voxel_model.grid_mask, voxel_model.grid_keys, voxel_model.grid2voxel = octree_utils.update_valid_gradient_table(cfg.model.density_mode, voxel_model.vox_center, voxel_model.vox_size, voxel_model.scene_center, voxel_model.inside_extent, max_voxel_level)
+            voxel_model.grid_mask, voxel_model.grid_keys, voxel_model.grid2voxel = octree_utils.update_valid_gradient_table(cfg.model.density_mode, voxel_model.vox_center, voxel_model.vox_size, voxel_model.scene_center, voxel_model.inside_extent, max_voxel_level, voxel_model.is_leaf)
             torch.cuda.synchronize()
 
             '''
@@ -1190,7 +1217,7 @@ if __name__ == "__main__":
         cfg.optimizer.geo_lr = 0.001
         cfg.optimizer.sh0_lr = 0.01 #0.01
         cfg.optimizer.shs_lr = 0.00025 # 0.00025
-        cfg.optimizer.lr_decay_ckpt = [ 250, 2000, 4000, 6000]
+        cfg.optimizer.lr_decay_ckpt = [  2000, 4000, 6000]
         cfg.optimizer.lr_decay_mult = 0.5
         cfg.init.geo_init = 0.0
         cfg.regularizer.dist_from = 4000
@@ -1198,15 +1225,13 @@ if __name__ == "__main__":
         cfg.regularizer.lambda_tv_density = 0.0
         cfg.regularizer.tv_from = 0000
         cfg.regularizer.tv_until = 4000
-        cfg.regularizer.lambda_vg_density =  0.0#1e-8
-        cfg.regularizer.vg_until = 8000
         cfg.regularizer.lambda_ascending = 0.0
         cfg.regularizer.ascending_from = 0
-        cfg.regularizer.lambda_normal_dmean = 0.1
+        cfg.regularizer.lambda_normal_dmean = 0.0
         cfg.regularizer.n_dmean_from = 2000  # 
-        cfg.regularizer.lambda_normal_dmed = 0.0
-        cfg.regularizer.n_dmed_from = 1000
-        cfg.procedure.prune_from = 0
+        cfg.regularizer.lambda_normal_dmed = 0.00
+        cfg.regularizer.n_dmed_from = 2000
+        cfg.procedure.prune_from = 1000
         cfg.procedure.prune_every = 1000
         cfg.procedure.prune_until = 8000
         cfg.procedure.subdivide_from = 0

@@ -290,7 +290,7 @@ def clamp_level(octpath, octlevel, max_lv):
 
     return octpath, octlevel
 
-def update_valid_gradient_table(cfg_mode, vox_center, vox_size, scene_center, inside_extent, grid_res):
+def update_valid_gradient_table(cfg_mode, vox_center, vox_size, scene_center, inside_extent, grid_res, is_leaf):
     if(cfg_mode == "exp_linear_11"):
         dummy_mask = torch.tensor([], dtype=torch.bool, device="cuda")
         dummy_keys = torch.tensor([], dtype=torch.int32, device="cuda")
@@ -298,7 +298,7 @@ def update_valid_gradient_table(cfg_mode, vox_center, vox_size, scene_center, in
         return dummy_mask, dummy_keys, dummy_vox
     
     
-    grid_mask, grid_keys, grid2voxel = svraster_cuda.utils.valid_gradient_table(vox_center, vox_size, scene_center, inside_extent, grid_res)
+    grid_mask, grid_keys, grid2voxel = svraster_cuda.utils.valid_gradient_table(vox_center, vox_size, scene_center, inside_extent, grid_res,is_leaf)
     
     # Sort by grid_keys (flat index)
     sorted_vals, sorted_idx = grid_keys.sort()

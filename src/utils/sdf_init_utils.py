@@ -141,7 +141,7 @@ def initialize_sdf_from_sfm(sfm_init, cameras, grid_pts_key, scene_center, scene
     # 카메라 메타는 validate_and_prepare_cameras 에서 이미 CPU 텐서로 확보한 상태 (cams_meta)
     D0_list = _build_depth_maps_from_points(
         sfm_init.points_xyz,  # ← numpy (M,3), 위에서 다운샘플한 SfM 포인트
-        cams_meta, bin_max=64, chunk=200_000
+        cams_meta, bin_max=256, chunk=200_000
     )
 
 

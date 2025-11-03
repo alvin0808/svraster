@@ -29,6 +29,7 @@ rasterize_preprocess(
     const torch::Tensor& octree_paths,
     const torch::Tensor& vox_centers,
     const torch::Tensor& vox_lengths,
+    const torch::Tensor& is_leaf,
 
     const bool debug);
 

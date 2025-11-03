@@ -76,6 +76,7 @@ class SparseVoxelModel(SVConstructor, SVProperties, SVRenderer, SVAdaptive, SVOp
             'vox_center',  # Center coordinates of the voxel
             'vox_size',  # Size of the voxel
             'subdiv_meta',  # Metadata for voxel subdivision (_subdiv_p 쭉 더한거 저장)
+            'is_leaf',
         ]
         self.per_voxel_param_lst = [
             '_sh0',  # Spherical harmonics coefficient for degree 0

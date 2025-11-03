@@ -57,7 +57,7 @@ def octpath_2_ijk(octpath, octlevel):
     assert octlevel.dtype == torch.int8
     return _C.octpath_2_ijk(octpath, octlevel)
 
-def valid_gradient_table(vox_center, vox_size, scene_center, inside_extent, grid_res):
+def valid_gradient_table(vox_center, vox_size, scene_center, inside_extent, grid_res, is_leaf):
     '''
     grid_res = 2**grid_res
     inside_min = scene_center - 0.5 * inside_extent
@@ -95,4 +95,4 @@ def valid_gradient_table(vox_center, vox_size, scene_center, inside_extent, grid
     grid2voxel = torch.tensor(grid2voxel, dtype=torch.int32, device="cuda")
     return grid_mask, grid_keys, grid2voxel
     '''
-    return _C.valid_gradient_table(vox_center, vox_size, scene_center, inside_extent, grid_res)
+    return _C.valid_gradient_table(vox_center, vox_size, scene_center, inside_extent, grid_res, is_leaf)

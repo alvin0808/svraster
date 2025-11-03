@@ -45,7 +45,7 @@ __global__ void preprocessCUDA(
 
     const float3* __restrict__ vox_centers,
     const float* __restrict__ vox_lengths,
-
+    const uint8_t* __restrict__ is_leaf,
     int* __restrict__ out_n_duplicates,
     uint32_t* __restrict__ n_duplicates,
     uint2* __restrict__ bboxes,
@@ -62,7 +62,8 @@ __global__ void preprocessCUDA(
     // We later can then skip rendering voxel with 0 duplication.
     out_n_duplicates[idx] = 0;
     n_duplicates[idx] = 0;
-
+    if(is_leaf[idx] == 0)
+        return; // Not a leaf node.
     // Load from global memory.
     const float3 vox_c = vox_centers[idx];
     const float vox_r = 0.5f * vox_lengths[idx];
@@ -167,6 +168,7 @@ rasterize_preprocess(
     const torch::Tensor& octree_paths,
     const torch::Tensor& vox_centers,
     const torch::Tensor& vox_lengths,
+    const torch::Tensor& is_leaf,
 
     const bool debug)
 {
@@ -213,7 +215,7 @@ rasterize_preprocess(
 
         (float3*)(vox_centers.contiguous().data_ptr<float>()),
         vox_lengths.contiguous().data_ptr<float>(),
-
+        is_leaf.contiguous().data_ptr<uint8_t>(),
         out_n_duplicates.contiguous().data_ptr<int>(),
         geomState.n_duplicates,
         geomState.bboxes,

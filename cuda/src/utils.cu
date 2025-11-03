@@ -197,11 +197,14 @@ __global__ void valid_gradient_table_kernel(
     bool* grid_mask,
     int* grid_keys,
     int* grid2voxel,
-    int* counter)
+    int* counter,
+    const bool* is_leaf)
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= N) return;
-
+    float cells = (vox_size[i]/inside_extent)*grid_res;
+    if((!is_leaf[i]) && (cells > 1.5f)) return;
+    if(( is_leaf[i]) && (cells < 0.9f)) return;
     const float* center = &vox_center[i * 3];
     float size = vox_size[i];
 
@@ -361,7 +364,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> valid_gradient_table(
     const at::Tensor& vox_size,
     const at::Tensor& scene_center,
     float inside_extent,
-    int grid_res_pow2)
+    int grid_res_pow2,
+    const at::Tensor& is_leaf)
 {
     
 
@@ -391,7 +395,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> valid_gradient_table(
         grid_mask.data_ptr<bool>(),
         grid_keys.data_ptr<int>(),
         grid2voxel.data_ptr<int>(),
-        counter.data_ptr<int>()
+        counter.data_ptr<int>(),
+        is_leaf.contiguous().data_ptr<bool>()
     );
     int valid_count = counter.cpu().item<int>();
     printf("Valid grid count: %d\n", valid_count);

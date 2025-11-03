@@ -141,12 +141,17 @@ class SVRenderer:
             need_normal=output_normal,
             track_max_w=track_max_w,
             **other_opt)
+        leaf_mask = self.is_leaf
+        if leaf_mask.ndim == 2 and leaf_mask.shape[1] == 1:
+            leaf_mask = leaf_mask.squeeze(1)
+        leaf_mask = leaf_mask.to(torch.uint8).contiguous().to(self.octpath.device)
         color, depth, normal, T, max_w, feat = svraster_cuda.renderer.rasterize_voxels(
             raster_settings,
             self.octpath,
             self.vox_center,
             self.vox_size,
-            self.vox_fn)
+            self.vox_fn,
+            leaf_mask,)
 
         ###################################
         # Post-processing and pack output
