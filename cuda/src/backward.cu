@@ -427,7 +427,8 @@ renderCUDA(
             }
             if (alpha < MIN_ALPHA){
                 if (lambda_ascending > 0)
-                {
+                { 
+                    /*
                     const float3 pt_a = ro + a * rd;
                     const float3 qt_a = (pt_a - (vox_c - 0.5f * vox_l)) * vox_l_inv;
                     const float3 pt_b = ro + b * rd;
@@ -460,6 +461,53 @@ renderCUDA(
                             atomicAdd(dL_dvox + vox_id * 12 + (base_id + iii) % 12,
                                     grad_pack_local[(base_id + iii) % 12]);
                         }
+                    }*/
+                    const float3 pt_a = ro + a * rd;
+                    const float3 qt_a = (pt_a - (vox_c - 0.5f * vox_l)) * vox_l_inv;
+                    const float3 pt_b = ro + b * rd;
+                    const float3 qt_b = (pt_b - (vox_c - 0.5f * vox_l)) * vox_l_inv;
+                        
+                    float interp_w_a[8], interp_w_b[8];
+                    tri_interp_weight(qt_a, interp_w_a);
+                    tri_interp_weight(qt_b, interp_w_b);
+                    
+
+                    float d_a = 0.f, d_b = 0.f;
+                    for (int iii=0; iii<8; ++iii)
+                    {
+                        d_a += geo_params[iii] * interp_w_a[iii];
+                        d_b += geo_params[iii] * interp_w_b[iii];
+                    }
+                    /*
+                    if (density_mode == DENSITY_SDF) {
+                        // descending: L = max(0, d_b - d_a)
+                        const float reg_w = weight_ascending * static_cast<float>(d_b > d_a);
+                        for (int iii = 0; iii < 8; ++iii)
+                            dL_dgeo_params[iii] += reg_w * (interp_w_b[iii] - interp_w_a[iii]);
+                    } else {
+                        // original ascending: L = max(0, d_a - d_b)
+                        const float reg_w = weight_ascending * pt_w * static_cast<float>(d_a > d_b);
+                        for (int iii = 0; iii < 8; ++iii)
+                            dL_dgeo_params[iii] += reg_w * (interp_w_a[iii] - interp_w_b[iii]);
+                    }*/
+                    float s = (b - a);          // rd가 unit이 아니면 length(rd) 필요
+                    s = fmaxf(s, 1e-6f);                     // 분모 안정화
+                    const float inv_s = 1.f / s;
+
+                    const float delta = d_b - d_a;           // (이미 위에서 계산되어 있어야 함)
+
+                    // 게이팅/가중(그대로)
+                    //if (T < 0.5f) continue;
+                    const float pt_w = alpha * T / (1.f - alpha);
+                    const float reg_w = weight_ascending *pt_w;
+
+                    // dL/d(delta) = 2 * (delta/s + 2) * (1/s)
+                    const float g = 2.f * reg_w * ((delta * inv_s) + 2.f) * inv_s;
+
+                    // 코너별 기여(그대로)
+                    #pragma unroll
+                    for (int iii = 0; iii < 8; ++iii) {
+                        dL_dgeo_params[iii] += g * (interp_w_b[iii] - interp_w_a[iii]);
                     }
                 }
                 continue;
@@ -721,14 +769,16 @@ renderCUDA(
 
             if (lambda_ascending > 0)
             {
+                
                 const float3 pt_a = ro + a * rd;
                 const float3 qt_a = (pt_a - (vox_c - 0.5f * vox_l)) * vox_l_inv;
                 const float3 pt_b = ro + b * rd;
                 const float3 qt_b = (pt_b - (vox_c - 0.5f * vox_l)) * vox_l_inv;
-
+                    
                 float interp_w_a[8], interp_w_b[8];
                 tri_interp_weight(qt_a, interp_w_a);
                 tri_interp_weight(qt_b, interp_w_b);
+                
 
                 float d_a = 0.f, d_b = 0.f;
                 for (int iii=0; iii<8; ++iii)
@@ -736,7 +786,7 @@ renderCUDA(
                     d_a += geo_params[iii] * interp_w_a[iii];
                     d_b += geo_params[iii] * interp_w_b[iii];
                 }
-
+                /*
                 if (density_mode == DENSITY_SDF) {
                     // descending: L = max(0, d_b - d_a)
                     const float reg_w = weight_ascending * static_cast<float>(d_b > d_a);
@@ -747,6 +797,24 @@ renderCUDA(
                     const float reg_w = weight_ascending * pt_w * static_cast<float>(d_a > d_b);
                     for (int iii = 0; iii < 8; ++iii)
                         dL_dgeo_params[iii] += reg_w * (interp_w_a[iii] - interp_w_b[iii]);
+                }*/
+                float s = (b - a);          // rd가 unit이 아니면 length(rd) 필요
+                s = fmaxf(s, 1e-6f);                     // 분모 안정화
+                const float inv_s = 1.f / s;
+
+                const float delta = d_b - d_a;           // (이미 위에서 계산되어 있어야 함)
+
+                // 게이팅/가중(그대로)
+                //if (T < 0.5f) continue;
+                const float reg_w = weight_ascending *pt_w;
+
+                // dL/d(delta) = 2 * (delta/s + 2) * (1/s)
+                const float g = 2.f * reg_w * ((delta * inv_s) + 2.f) * inv_s;
+
+                // 코너별 기여(그대로)
+                #pragma unroll
+                for (int iii = 0; iii < 8; ++iii) {
+                    dL_dgeo_params[iii] += g * (interp_w_b[iii] - interp_w_a[iii]);
                 }
             }
 

@@ -23,16 +23,17 @@ import natsort
 import numpy as np
 from PIL import Image
 from pathlib import Path
-
+import glob
+from torchvision.transforms.functional import to_tensor
 from src.utils.camera_utils import focal2fov
 from .reader_scene_info import CameraInfo, PointCloud, SceneInfo, SFMInitData
 from .colmap_loader import read_extrinsics_text, read_intrinsics_text, \
                            read_extrinsics_binary, read_intrinsics_binary, \
                            read_points3D_binary, read_points3D_text, \
-                           read_colmap_ply, qvec2rotmat
+                           read_colmap_ply, qvec2rotmat, fetchPly
 
 
-def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, points, correspondent, depth_paths):
+def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, points, correspondent, depth_paths, normal_paths):
 
     print(f"images_folder={images_folder}")
 
@@ -40,12 +41,19 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
     keys = natsort.natsorted(
         cam_extrinsics.keys(),
         key = lambda i : cam_extrinsics[i].name)
-
+    
     # Parse paths to depth map if given
     if depth_paths:
         depth_paths = natsort.natsorted(glob.glob(depth_paths))
         assert len(depth_paths) == len(keys), "Number of depth maps mismatched."
-
+    conf_paths = []
+    if normal_paths:
+        normal_paths = natsort.natsorted(glob.glob(normal_paths))
+        assert len(normal_paths) == len(keys), "Number of normal maps mismatched."
+        conf_paths  = [p.replace("normal", "conf") for p in normal_paths]
+    if conf_paths:
+        assert len(conf_paths) == len(keys), "Number of confidence maps mismatched."
+        print(f"Found {len(conf_paths)} confidence maps.")
     cam_infos = []
     for idx, key in enumerate(keys):
 
@@ -107,7 +115,7 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
         mpath = find_mask_path(image_path, masks_dir)
         if mpath is not None:
             mask_path = mpath
-            mask = Image.open(mpath)  # 0..255 (ÇÊ¿äÇÏ¸é ³ªÁß ´Ü°è¿¡¼­ ÀÌÁøÈ­)
+            mask = Image.open(mpath)  # 0..255 (ï¿½Ê¿ï¿½ï¿½Ï¸ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½Ü°è¿¡ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½È­)
         else:
             mask_path = ""
             mask = None
@@ -122,7 +130,12 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
         else:
             depth_path = ""
             depth = None
-
+        if normal_paths:
+            normal_path = normal_paths[idx]
+            normal = Image.open(normal_path)
+        if conf_paths:
+            conf_path = conf_paths[idx]
+            conf = to_tensor(Image.open(conf_path).convert('L'))
         # Load sparse depth
         if extr.name in correspondent:
             sparse_pt = points[correspondent[extr.name]]
@@ -137,14 +150,16 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
                 width=width, height=height,
                 cx_p=None, cy_p=None,
                 image=image, image_path=image_path,
-                depth=depth, depth_path=depth_path,
+                depth=depth, depth_path=depth_path, 
+                normal=normal, normal_path=normal_path,
+                conf=conf, conf_path=conf_path,
                 sparse_pt=sparse_pt,
                 mask=mask, mask_path=mask_path)
         cam_infos.append(cam_info)
     return cam_infos
 
 
-def read_colmap_dataset(path, images, eval, test_every=8, depth_paths=""):
+def read_colmap_dataset(path, images, eval, test_every=8, depth_paths="", normal_paths=""):
     # Parse colmap meta data
     sparse_path = os.path.join(path, "sparse", "0")
     if not os.path.exists(sparse_path):
@@ -173,13 +188,13 @@ def read_colmap_dataset(path, images, eval, test_every=8, depth_paths=""):
         colors=colors,
         normals=normals,
         ply_path=ply_path)
-    points3d_txt_path = os.path.join(sparse_path, "points3D.txt")
+    points3d_txt_path = os.path.join(sparse_path, "aligned_points3D.ply")
     if os.path.exists(points3d_txt_path):
-        sfm_xyz, idx_to_pid, pid_to_img_ids = read_points3D_text(points3d_txt_path)
+        sfm_xyz, colors, normals = fetchPly(points3d_txt_path)
         sfm_data = SFMInitData(
             points_xyz=sfm_xyz,
-            index_to_point_id=idx_to_pid,
-            point_id_to_image_ids=pid_to_img_ids
+            index_to_point_id=None,
+            point_id_to_image_ids=None
         )
     else:
         sfm_data = SFMInitData(
@@ -196,7 +211,8 @@ def read_colmap_dataset(path, images, eval, test_every=8, depth_paths=""):
         images_folder=os.path.join(path, image_dir),
         points=points,
         correspondent=correspondent,
-        depth_paths=depth_paths)
+        depth_paths=depth_paths,
+        normal_paths=normal_paths)
 
     if eval:
         train_cam_infos = [c for idx, c in enumerate(cam_infos) if idx % test_every != 0]

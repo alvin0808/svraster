@@ -34,6 +34,8 @@ class CameraInfo(NamedTuple):
     depth_path: str = ""
     normal: PIL.Image.Image = None
     normal_path: str = ""
+    conf: PIL.Image.Image = None
+    conf_path: str = ""
     mask: PIL.Image.Image = None
     mask_path: str = ""
 

@@ -203,7 +203,7 @@ __global__ void valid_gradient_table_kernel(
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= N) return;
     float cells = (vox_size[i]/inside_extent)*grid_res;
-    if((!is_leaf[i]) && (cells > 1.5f)) return;
+    if((!is_leaf[i]) && ((cells > 1.5f)||(cells<0.9f))) return;
     if(( is_leaf[i]) && (cells < 0.9f)) return;
     const float* center = &vox_center[i * 3];
     float size = vox_size[i];

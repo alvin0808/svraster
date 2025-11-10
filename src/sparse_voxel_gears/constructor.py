@@ -163,6 +163,15 @@ class SVConstructor:
                 voxel_size=self.vox_size.min(),
                 debug_ply_output_path=debug_ply_output_path  # <<<< voxel_size ����!
             )
+            level = 16 
+            grid_pts_pos = self.grid_pts_key.float() / (1 << level)
+            grid_pts_pos = grid_pts_pos * self.scene_extent + (self.scene_center - 0.5 * self.scene_extent)  # world coords
+            
+            dist = torch.norm(grid_pts_pos - self.scene_center[None, :], dim=-1, keepdim=True)
+            inside_mask = (dist <= self.inside_extent.item() * 4.0)  # inside bound
+            outside_mask = ~inside_mask
+            _geo_grid_pts[outside_mask] = self.inside_extent.item()*5-dist[outside_mask]
+
         _rgb = torch.full([N, 3], cfg_init.sh0_init, dtype=torch.float32, device="cuda")
         
         _shs = torch.full([N, (self.max_sh_degree+1)**2 - 1, 3], cfg_init.shs_init, dtype=torch.float32, device="cuda")

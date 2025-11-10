@@ -301,7 +301,7 @@ class Mast3rMetricDepthLoss:
         mult = self.end_mult ** ratio
         return mult * loss
 
-
+'''
 class NormalDepthConsistencyLoss:
     def __init__(self, iter_from, iter_end, ks, tol_deg):
         self.iter_from = iter_from
@@ -341,7 +341,42 @@ class NormalDepthConsistencyLoss:
         num = mask.sum().clamp_min(1)
         loss = (diff * mask.float()).sum() / num
         return loss
+'''
+class NormalDepthConsistencyLoss:
+    def __init__(self, iter_from, iter_end, ks, tol_deg):
+        self.iter_from = iter_from
+        self.iter_end = iter_end
+        self.ks = ks
+        self.tol_cos = np.cos(np.deg2rad(tol_deg))
 
+    def is_active(self, iteration):
+        return iteration >= self.iter_from and iteration <= self.iter_end
+
+    def __call__(self, cam, render_pkg, iteration):
+        assert "raw_T" in render_pkg, "Forgot to set `output_T=True` when calling render?"
+        assert "raw_depth" in render_pkg, "Forgot to set `output_depth=True` when calling render?"
+        assert "raw_normal" in render_pkg, "Forgot to set `output_normal=True` when calling render?"
+
+        if not self.is_active(iteration):
+            return 0
+
+        # Read rendering results
+        render_alpha = 1 - render_pkg['raw_T'].detach().squeeze(0)
+        render_depth = render_pkg['raw_depth'][0]
+        render_normal = render_pkg['raw_normal']
+
+        # Compute depth to normal
+        N_mean = -cam.depth2normal(render_depth, ks=self.ks, tol_cos=self.tol_cos)
+
+        # Blend with alpha and compute target
+        target = render_alpha.square()
+        N_mean = N_mean * render_alpha
+
+        # Compute loss
+        mask = (N_mean != 0).any(0)
+        loss_map = (target - (render_normal * N_mean).sum(dim=0)) * mask
+        loss = loss_map.mean()
+        return loss
 
 class NormalMedianConsistencyLoss:
     def __init__(self, iter_from, iter_end):
@@ -363,7 +398,7 @@ class NormalMedianConsistencyLoss:
         render_normal = render_pkg['raw_normal']
 
         # Compute depth to normal
-        N_med = cam.depth2normal(render_median, ks=3)
+        N_med = -cam.depth2normal(render_median, ks=3)
 
         # Compute loss
         mask = (N_med != 0).any(0)
@@ -385,6 +420,7 @@ class Pi3NormalLoss:
         if not self.is_active(iteration):
             return 0
         gt = cam.normal              # [3,H,W]
+        conf = cam.conf              # [1,H,W]
         pred = render_pkg["raw_normal"]  # [3,H,W]
         device = pred.device
 
@@ -396,8 +432,11 @@ class Pi3NormalLoss:
         if (Hg, Wg) != (Hp, Wp):
             gt = F.interpolate(gt.unsqueeze(0), size=(Hp, Wp),
                                mode='bilinear', align_corners=False).squeeze(0)
+            if conf is not None:
+                conf = F.interpolate(conf.unsqueeze(0), size=(Hp, Wp),
+                                   mode='bilinear', align_corners=False).squeeze(0)
         
-
+        
 
         gt = gt.to(device)
 
@@ -409,7 +448,9 @@ class Pi3NormalLoss:
             return torch.tensor(0.0, device=device)
 
         cos = (pred * gt).sum(dim=0).clamp(-1.0, 1.0)  # [H,W]
-        loss = (1.0 - cos)[valid].mean()
+        err = 1.0 - cos  # [H,W]
+        w = conf.to(device).squeeze(0) if conf is not None else torch.ones_like(err, device=device)
+        loss = (w[valid] * err[valid]).sum() / w[valid].sum()
         return loss
         
 '''

@@ -40,7 +40,7 @@ import open3d as o3d
 import os
 import argparse
 # import torch
-
+import faulthandler; faulthandler.enable()
 from config import scenes_tau_dict
 from registration import (
     trajectory_alignment,
@@ -113,6 +113,7 @@ def run_evaluation(dataset_dir, traj_path, ply_path, out_dir, view_crop):
 
     gt_trans = np.loadtxt(alignment)
     print(traj_path)
+
     traj_to_register = []
     if traj_path.endswith('.npy'):
         ld = np.load(traj_path)
@@ -140,9 +141,11 @@ def run_evaluation(dataset_dir, traj_path, ply_path, out_dir, view_crop):
 
     else:
         traj_to_register = read_trajectory(traj_path)
-    print(colmap_ref_logfile)
-    gt_traj_col = read_trajectory(colmap_ref_logfile)
 
+    print(colmap_ref_logfile)
+
+    gt_traj_col = read_trajectory(colmap_ref_logfile)
+    
     trajectory_transform = trajectory_alignment(map_file, traj_to_register,
                                                 gt_traj_col, gt_trans, scene)
 

@@ -279,13 +279,15 @@ renderCUDA(
                     float phi_curr  = 1.f / (1.f + expf(-s_val[0] * sdf_curr));
                     if(need_depth && n_samp > 1)
                         local_alphas[k] = fmaxf((phi_former - phi_curr) / (phi_former + eps), 0.f);
+                    /*
                     if ( !has_sdf0 &&sdf_former > 0.f && sdf_curr < 0.f ) {
                         float sdf_range = sdf_former - sdf_curr ;
                         float t_ratio = sdf_former / sdf_range;
                         float t_sdf0 = a + (k+t_ratio)*seg_len;
                         sdf0_t = t_sdf0;
                         has_sdf0 = true;
-                    }
+                    }*/
+
                     phi_former = phi_curr;
                     sdf_former = sdf_curr;
                     

@@ -70,7 +70,7 @@ __global__ void voxel_gradient_kernel(
     // dL/dS[i] = dL/dg · ∂g/∂S[i] = (dLdgx*sx[i] + dLdgy*sy[i] + dLdgz*sz[i]) * (1/(4h))
     #pragma unroll
     for (int i=0;i<8;++i){
-        const float dLdSi = (dLdgx * sx[i] + dLdgy * sy[i] + dLdgz * sz[i]) * inv4h;
+        const float dLdSi = (dLdgx * sx[i] + dLdgy * sy[i] + dLdgz * sz[i]) * 0.25f; //scaling originally inv4h
         atomicAdd(grid_pts_grad+ vox_key[v*8 + i] , dLdSi);
     }
 

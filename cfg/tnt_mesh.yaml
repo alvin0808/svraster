@@ -9,6 +9,7 @@
 # See `src/config.py` for the base setup.
 model:
   vox_geo_mode: triinterp3
+  outside_level: 5
 
 data:
   eval: False
@@ -17,5 +18,30 @@ data:
 regularizer:
   lambda_T_inside: 0.01
   lambda_R_concen: 0.1
-  lambda_normal_dmean: 0.001
-  lambda_normal_dmed: 0.001
+  lambda_vg_density : 1e-11
+  vg_from : 6000
+  vg_until : 10000
+  vg_decay_every : 2000
+  vg_decay_mult : 1.0
+  vg_sparse : False
+  vg_drop_ratio : 0.5
+
+  lambda_ge_density : 1e-8
+  ge_from : 0
+  ge_until : 6000
+  ge_decay_every : 2000
+  ge_decay_mult : 0.25
+  ge_sparse : False
+  ge_drop_ratio : 0.0
+  lambda_ls_density : 1e-10
+  ls_from : 0
+  ls_until : 10000
+  ls_decay_every : 2000
+  ls_decay_mult : 0.25
+  ls_sparse : False
+  ls_drop_ratio : 0.0
+  lambda_pi3_normal : 0.01
+  pi3_normal_from : 0
+  pi3_normal_end : 8000
+  pi3_normal_decay_every : 4000
+  pi3_normal_decay_mult : 0.5

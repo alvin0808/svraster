@@ -37,6 +37,7 @@ class DataPack:
                 path=cfg_data.source_path,
                 images=cfg_data.images,
                 depth_paths=cfg_data.depth_paths,
+                normal_paths=cfg_data.normal_paths,
                 test_every=cfg_data.test_every,
                 eval=cfg_data.eval)
         elif os.path.exists(meta_path1) or os.path.exists(meta_path2):
@@ -66,12 +67,14 @@ class DataPack:
         self.has_depth = False
         self.has_mask = False
         self.has_normal = False
+        self.has_conf = False
         for cams_split in self._cameras.values():
             for cams in cams_split.values():
                 for cam in cams:
                     self.has_depth |= cam.depth is not None
                     self.has_mask |= cam.mask is not None
                     self.has_normal |= cam.normal is not None
+                    self.has_conf |= cam.conf is not None
 
         if self.has_mask and cfg_data.blend_mask:
             bg_color = torch.tensor([float(white_background)]*3, dtype=torch.float32)

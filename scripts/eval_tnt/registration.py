@@ -69,7 +69,7 @@ def trajectory_alignment(map_file, traj_to_register, gt_traj_col, gt_trans,
         traj_pcd_col.transform(gt_trans)
     corres = o3d.utility.Vector2iVector(
         np.asarray(list(map(lambda x: [x, x], range(len(gt_traj_col))))))
-    rr = o3d.pipelines.registration.RANSACConvergenceCriteria()
+    rr = o3d.registration.RANSACConvergenceCriteria()
     rr.max_iteration = 100000
     # rr.max_validation = 100000
 
@@ -96,12 +96,12 @@ def trajectory_alignment(map_file, traj_to_register, gt_traj_col, gt_trans,
             traj_to_register_pcd_rand.points.append(elem)
 
     # Rough registration based on aligned colmap SfM data
-    reg = o3d.pipelines.registration.registration_ransac_based_on_correspondence(
+    reg = o3d.registration.registration_ransac_based_on_correspondence(
         traj_to_register_pcd_rand,
         traj_pcd_col,
         corres,
         0.2,
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(True),
+        o3d.registration.TransformationEstimationPointToPoint(True),
         6,
         criteria=rr,
     )
@@ -149,13 +149,13 @@ def registration_unif(
     t = crop_and_downsample(gt_target,
                             crop_volume,
                             down_sample_method="uniform")
-    reg = o3d.pipelines.registration.registration_icp(
+    reg = o3d.registration.registration_icp(
         s,
         t,
         threshold,
         np.identity(4),
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(True),
-        o3d.pipelines.registration.ICPConvergenceCriteria(1e-6, max_itr),
+        o3d.registration.TransformationEstimationPointToPoint(True),
+        o3d.registration.ICPConvergenceCriteria(1e-6, max_itr),
     )
     reg.transformation = np.matmul(reg.transformation, init_trans)
     return reg
@@ -188,13 +188,13 @@ def registration_vol_ds(
         down_sample_method="voxel",
         voxel_size=voxel_size,
     )
-    reg = o3d.pipelines.registration.registration_icp(
+    reg = o3d.registration.registration_icp(
         s,
         t,
         threshold,
         np.identity(4),
-        o3d.pipelines.registration.TransformationEstimationPointToPoint(True),
-        o3d.pipelines.registration.ICPConvergenceCriteria(1e-6, max_itr),
+        o3d.registration.TransformationEstimationPointToPoint(True),
+        o3d.registration.ICPConvergenceCriteria(1e-6, max_itr),
     )
     reg.transformation = np.matmul(reg.transformation, init_trans)
     return reg

@@ -154,7 +154,7 @@ def extract_mesh(args, data_pack, voxel_model, final_lv, crop_bbox, use_lv_avg, 
         if args.use_mean:
             frame_depth = render_pkg['raw_depth'][[0]]  # Use mean depth
         else:
-            frame_depth = render_pkg['raw_depth'][[3]]  # Use median depth
+            frame_depth = render_pkg['raw_depth'][[2]]  # Use median depth
         frame_alpha = 1 - render_pkg['raw_T']
         if args.save_gpu:
             frame_depth = frame_depth.cpu()
@@ -282,7 +282,7 @@ def colorize_pts(args, pts, data_pack):
         if args.use_mean:
             frame_depth = render_pkg['raw_depth'][[0]]  # Use mean depth
         else:
-            frame_depth = render_pkg['raw_depth'][[3]]  # Use median depth
+            frame_depth = render_pkg['raw_depth'][[2]]  # Use median depth
         frame_alpha = 1 - render_pkg['raw_T']
         H, W = frame_depth.shape[-2:]
 

@@ -264,7 +264,7 @@ def training(args):
                 cfg.regularizer.lambda_ge_density = s * cfg.regularizer._ge_final
             cfg.regularizer.lambda_ls_density = s * cfg.regularizer._ls_final
         '''
-        if iteration == 8000:
+        if iteration == 10000:
         # 占쎌긿占쎈뼒筌띾뜆�뵠占쏙옙占쏙옙�벥 筌뤴뫀諭� 占쎈솁占쎌뵬沃섎챸苑� 域밸챶竊숋옙�뱽 占쎈떄占쎌돳
         # self.optimizer -> voxel_model.optimizer 嚥∽옙 占쎈땾占쎌젟
             for param_group in voxel_model.optimizer.param_groups:
@@ -281,7 +281,7 @@ def training(args):
         std_increase_rate = 0.07 / (prune_every * 2)
 
         # 鈺곌퀗援뷂옙�뱽 first_prune�겫占쏙옙苑� 8000 沃섎챶彛붹틦�슣占쏙옙嚥∽옙 癰귨옙野껓옙
-        if 1 <= iteration < 8000: # 疫꿸퀣���: <= (first_prune + prune_every*6)
+        if 1 <= iteration < 10000: # 疫꿸퀣���: <= (first_prune + prune_every*6)
             with torch.no_grad():
                 voxel_model._log_s.add_(std_increase_rate)
 
@@ -338,9 +338,9 @@ def training(args):
         loss_dict = {"photo": loss_photo}
         '''
         # Loss
-        gt_mask = cam.mask.cuda() 
+        #gt_mask = cam.mask.cuda() 
 
-        gt_image_modified = gt_image *gt_mask
+        gt_image_modified = gt_image #*gt_mask
 
         mse = loss_utils.l2_loss(render_image, gt_image_modified)
 
@@ -490,7 +490,7 @@ def training(args):
                     total_nonleaf = int(sum(counts))
                     print(f"  [voxels] non-leaf total: {total_nonleaf}")
                     for L, C in zip(uniq_lvls, counts):
-                        print(f"    - level {L}: {C}")
+                        print(f"    - level {L-cfg.model.outside_level}: {C}")
         # INSERT_YOUR_CODE
         # 占쎌삏占쎈쐭筌랃옙 png 占쎌뵠占쎄숲占쎌쟿占쎌뵠占쎈�∽쭕�뜄�뼄 占쏙옙占쏙옙�삢
         '''
@@ -588,7 +588,7 @@ def training(args):
             #     print("Eikonal loss applied (before)")
             asdf = voxel_model._geo_grid_pts.grad * 10000
             # breakpoint()
-            lambda_ge_mult = cfg.regularizer.ge_decay_mult ** min(iteration // cfg.regularizer.ls_decay_every, 2)
+            lambda_ge_mult = cfg.regularizer.ge_decay_mult ** min(iteration // cfg.regularizer.ge_decay_every, 2)
             G = voxel_model.grid_keys.numel()
             K =  int(G * (1.0 - float(cfg.regularizer.ls_drop_ratio)))
             active_list = torch.randperm(G, device=voxel_model.grid_keys.device)[:K].to(torch.int32).contiguous()
@@ -833,7 +833,7 @@ def training(args):
                 min_abs_sdf = sdf_vals.abs().min(dim=1).values.view(-1)  # avg??
                 global_vox_size_min = voxel_model.vox_size.min().item()
                 #sdf_thresh = learning_thickness*2 * global_vox_size_min
-                sdf_thresh = torch.log(torch.tensor(99.0, device=voxel_model._log_s.device)) / torch.exp(10 * voxel_model._log_s)
+                sdf_thresh = torch.log(torch.tensor(199.0, device=voxel_model._log_s.device)) / torch.exp(10 * voxel_model._log_s)
                 learning_thickness = sdf_thresh /2/global_vox_size_min
                 print(f"true_learning_thickness = {learning_thickness:.4f}")
                 sdf_thresh = max(2*global_vox_size_min, sdf_thresh.item())
@@ -861,9 +861,9 @@ def training(args):
             size_thres = stat_pkg['min_samp_interval'] * cfg.procedure.subdivide_samp_thres
             large_enough_mask = (voxel_model.vox_size * 0.5 > size_thres).squeeze(1)
             non_finest_mask = voxel_model.octlevel.squeeze(1) < svraster_cuda.meta.MAX_NUM_LEVELS 
-            if cfg.model.density_mode == 'sdf' and iteration <6000:
-                non_finest_mask = voxel_model.octlevel.squeeze(1) < (svraster_cuda.meta.MAX_NUM_LEVELS-6- max(0, 3 - iteration // 2000)+cfg.model.outside_level)
-                #print(f"max octlevel for sdf: {svraster_cuda.meta.MAX_NUM_LEVELS-2- max(0, 3 - iteration // 3000)}")
+            if cfg.model.density_mode == 'sdf':
+                non_finest_mask = voxel_model.octlevel.squeeze(1) < (svraster_cuda.meta.MAX_NUM_LEVELS-5- max(0, 3 - iteration // 2000)+cfg.model.outside_level)
+                print(f"max octlevel for sdf: {svraster_cuda.meta.MAX_NUM_LEVELS-2- max(0, 3 - iteration // 3000)}")
             valid_mask = large_enough_mask & non_finest_mask
 
             # Get some statistic for subdivision priority
@@ -872,7 +872,7 @@ def training(args):
             # Compute priority rank (larger value has higher priority)
             rank = torch.zeros_like(priority)
             rank[priority.argsort()] = torch.arange(len(priority), dtype=torch.float32, device="cuda")
-
+            
             # Determine the number of voxels to subdivided
             if iteration <= cfg.procedure.subdivide_all_until:
                 thres = -1
@@ -882,7 +882,27 @@ def training(args):
             # Compute subdivision mask
             
             subdivide_mask = (rank > thres) & valid_mask
+            outside_mask = ~voxel_model.inside_mask
+            subdivide_mask_for_outside = subdivide_mask & outside_mask
+            n_out = int(subdivide_mask_for_outside.sum().item())
+            print(f"[outside subdivide] count = {n_out}")
+
             
+            inside = voxel_model.inside_mask
+            candidates = valid_mask & inside       # 내부 후보만
+
+            if iteration <= cfg.procedure.subdivide_all_until:
+                subdivide_mask = candidates
+            else:
+                prio = voxel_model.subdiv_meta.squeeze(1)
+
+                # inside 후보들에서만 분위값 계산
+                prio_inside = prio[candidates]
+                if prio_inside.numel() == 0:
+                    subdivide_mask = torch.zeros_like(candidates)
+                else:
+                    thres = torch.quantile(prio_inside, 1 - subdivide_prop)
+                    subdivide_mask = candidates & (prio >= thres) | subdivide_mask_for_outside
             if cfg.model.density_mode == 'sdf' and iteration <6000: # SDF 癲ル슢�뀈泳�占썹뛾占썲뜝占�?�뜝�럥�맶�뜝�럥吏쀥뜝�럩援� ?�뜝�럥�맶�뜝�럥吏쀥뜝�럩援�
                 with torch.no_grad():
                     sdf_vals = voxel_model._geo_grid_pts[voxel_model.vox_key]  # [N, 8, 1]
@@ -893,7 +913,8 @@ def training(args):
                 max_level = 9 +cfg.model.outside_level- max(0, 2 - iteration // 2000) # 9 + 1 = 10
                 under_level = cur_level < max_level
                 valid_mask = has_surface & under_level
-                
+                subdivide_mask = (valid_mask & voxel_model.is_leaf.squeeze(1) & voxel_model.inside_mask) | ( subdivide_mask_for_outside &valid_mask)
+                '''
                 if iteration < 6000:
                     topk = 50000
 
@@ -907,7 +928,7 @@ def training(args):
 
                     subdivide_mask = torch.zeros_like(priority, dtype=torch.bool)
                     subdivide_mask[topk_abs_idx] = True
-                
+                '''
                 if  iteration <= cfg.procedure.subdivide_all_until:
                     subdivide_mask = under_level
             
@@ -919,7 +940,8 @@ def training(args):
                 subdivide_mask &= (rank > rank[subdivide_mask].sort().values[n_removed-1])
 
             # Subdivision
-            subdivide_mask = subdivide_mask & voxel_model.is_leaf.squeeze(1) & voxel_model.inside_mask
+            #subdivide_mask = (subdivide_mask & voxel_model.is_leaf.squeeze(1) & voxel_model.inside_mask) | subdivide_mask_for_outside
+            
             ori_n = voxel_model.num_voxels
             if subdivide_mask.sum() > 0:
                 voxel_model.subdividing(subdivide_mask, cfg.procedure.subdivide_save_gpu)
@@ -1087,8 +1109,8 @@ def training_report(data_pack, voxel_model, iteration, loss, psnr, elapsed, ema_
                 im_tensor2np(render_normal * 0.5 + 0.5),
             ], axis=1),
             np.concatenate([
-                im_tensor2np(view.depth2normal(render_depth) * 0.5 + 0.5),
-                im_tensor2np(view.depth2normal(render_depth_med) * 0.5 + 0.5),
+                im_tensor2np(-view.depth2normal(render_depth) * 0.5 + 0.5),
+                im_tensor2np(-view.depth2normal(render_depth_med) * 0.5 + 0.5),
             ], axis=1),
         ], axis=0)
         torch.cuda.empty_cache()
@@ -1214,10 +1236,10 @@ if __name__ == "__main__":
     if args.seunghun:
         cfg.model.density_mode = "sdf"
         cfg.model.vox_geo_mode = "triinterp3"
-        cfg.optimizer.geo_lr = 0.001
+        cfg.optimizer.geo_lr = 0.005
         cfg.optimizer.sh0_lr = 0.01 #0.01
         cfg.optimizer.shs_lr = 0.00025 # 0.00025
-        cfg.optimizer.lr_decay_ckpt = [  2000, 4000, 6000]
+        cfg.optimizer.lr_decay_ckpt = [ 4000,6000,7000]
         cfg.optimizer.lr_decay_mult = 0.5
         cfg.init.geo_init = 0.0
         cfg.regularizer.dist_from = 4000
@@ -1227,13 +1249,13 @@ if __name__ == "__main__":
         cfg.regularizer.tv_until = 4000
         cfg.regularizer.lambda_ascending = 0.0
         cfg.regularizer.ascending_from = 0
-        cfg.regularizer.lambda_normal_dmean = 0.0
+        cfg.regularizer.lambda_normal_dmean = 0.001
         cfg.regularizer.n_dmean_from = 2000  # 
-        cfg.regularizer.lambda_normal_dmed = 0.00
-        cfg.regularizer.n_dmed_from = 2000
-        cfg.procedure.prune_from = 1000
+        cfg.regularizer.lambda_normal_dmed = 0.001
+        cfg.regularizer.n_dmed_from = 1000
+        cfg.procedure.prune_from = 00
         cfg.procedure.prune_every = 1000
-        cfg.procedure.prune_until = 8000
+        cfg.procedure.prune_until = 9000
         cfg.procedure.subdivide_from = 0
         cfg.procedure.subdivide_every = 250
         cfg.regularizer.lambda_mask = 0.0
