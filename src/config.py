@@ -127,11 +127,11 @@ cfg.regularizer = CfgNode(dict(
     n_dmed_from=2000,
     n_dmed_end=20_000,
 
-    lambda_pi3_normal = 0.1,
+    lambda_pi3_normal = 0.0,
     pi3_normal_from=0,
-    pi3_normal_end=4000,
-    pi3_normal_decay_every=2000,
-    pi3_normal_decay_mult=1.0,
+    pi3_normal_end=18000,
+    pi3_normal_decay_every=10000,
+    pi3_normal_decay_mult=0.1,
 
     # Total variation loss of density grid
     lambda_tv_density = 1e-8,
@@ -141,7 +141,7 @@ cfg.regularizer = CfgNode(dict(
     tv_decay_mult = 0.8,
     tv_sparse = False,
 
-    lambda_vg_density = 1e-11,
+    lambda_vg_density = 0.0, #1e-11,
     vg_from = 6000,
     vg_until = 8000,
     vg_decay_every = 2000,
@@ -149,7 +149,7 @@ cfg.regularizer = CfgNode(dict(
     vg_sparse = False,
     vg_drop_ratio = 0.5,
 
-    lambda_ge_density = 2e-8,
+    lambda_ge_density = 0.0, #2e-8,
     ge_from = 0,
     ge_until = 6000,
     ge_decay_every = 2000,
@@ -157,7 +157,7 @@ cfg.regularizer = CfgNode(dict(
     ge_sparse = False,
     ge_drop_ratio = 0.0,
 
-    lambda_ls_density = 1e-10,
+    lambda_ls_density = 0.0, #1e-10,
     ls_from = 0,
     ls_until = 8000,
     ls_decay_every = 2000,
@@ -206,7 +206,7 @@ cfg.init = CfgNode(dict(
 
 cfg.procedure = CfgNode(dict(
     # Schedule
-    n_iter = 8_000,
+    n_iter = 20_000,
     sche_mult = 1.0,
     seed=3721,
 
@@ -223,7 +223,7 @@ cfg.procedure = CfgNode(dict(
     # Adaptive voxel pruning
     subdivide_from = 1000,
     subdivide_every = 1000,
-    subdivide_until = 8000,
+    subdivide_until = 15000,
     subdivide_samp_thres = 1.0, # A voxel max sampling rate should larger than this.
     subdivide_target_scale = 90.0,
     subdivide_max_num = 10_000_000,

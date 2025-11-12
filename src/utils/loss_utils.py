@@ -327,7 +327,7 @@ class NormalDepthConsistencyLoss:
         render_normal = render_pkg['raw_normal']
 
         # Compute depth to normal
-        N_mean = cam.depth2normal(render_depth, ks=self.ks, tol_cos=self.tol_cos)
+        N_mean = -cam.depth2normal(render_depth, ks=self.ks, tol_cos=self.tol_cos)
 
         # Blend with alpha and compute target
         target = render_alpha.square()
@@ -363,7 +363,7 @@ class NormalMedianConsistencyLoss:
         render_normal = render_pkg['raw_normal']
 
         # Compute depth to normal
-        N_med = cam.depth2normal(render_median, ks=3)
+        N_med = -cam.depth2normal(render_median, ks=3)
 
         # Compute loss
         mask = (N_med != 0).any(0)

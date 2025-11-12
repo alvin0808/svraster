@@ -114,8 +114,8 @@ class SVConstructor:
             if cfg_init.init_sparse_points:
                 print("Warning: No SfM sparse points provided, init by spherical distribution.")
             mode = 1
-
-
+        
+        mode =1
         if cfg_mode == "exp_linear_11":
             _geo_grid_pts = torch.full([self.num_grid_pts, 1], cfg_init.geo_init, dtype=torch.float32, device="cuda")
         elif mode ==0 : 
