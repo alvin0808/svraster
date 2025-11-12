@@ -32,7 +32,7 @@ cfg.data = CfgNode(dict(
     extension = ".png",
     blend_mask = True,
     depth_paths = "",
-    normal_paths = "/home/user/data/TNT_GOF/TrainingSet/Barn/normal/*.png",
+    normal_paths = "/home/user/data/TNT_GOF/TrainingSet/Truck/normal/*.png",
     depth_scale = 1.0,
     data_device = "cpu",
     eval = False,
@@ -207,7 +207,7 @@ cfg.init = CfgNode(dict(
 
 cfg.procedure = CfgNode(dict(
     # Schedule
-    n_iter = 10_000,
+    n_iter = 20_000,
     sche_mult = 1.0,
     seed=3721,
 
@@ -224,7 +224,7 @@ cfg.procedure = CfgNode(dict(
     # Adaptive voxel pruning
     subdivide_from = 1000,
     subdivide_every = 1000,
-    subdivide_until = 9000,
+    subdivide_until = 15000,
     subdivide_samp_thres = 1.0, # A voxel max sampling rate should larger than this.
     subdivide_target_scale = 90.0,
     subdivide_max_num = 10_000_000,

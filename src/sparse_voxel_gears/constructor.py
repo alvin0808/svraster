@@ -114,8 +114,8 @@ class SVConstructor:
             if cfg_init.init_sparse_points:
                 print("Warning: No SfM sparse points provided, init by spherical distribution.")
             mode = 1
-
-
+        
+        mode =1
         if cfg_mode == "exp_linear_11":
             _geo_grid_pts = torch.full([self.num_grid_pts, 1], cfg_init.geo_init, dtype=torch.float32, device="cuda")
         elif mode ==0 : 
@@ -135,16 +135,17 @@ class SVConstructor:
             dist_max = dist.max().item()
             #print("Max distance from center at initialisation:", dist_max)
             # dist: [M, 1] - distance from grid point to scene center
-            inside_mask = (dist <= self.inside_extent.item() * 0.867)  # inside bound
-            outside_mask = ~inside_mask
+            
 
             _geo_grid_pts = torch.empty([self.num_grid_pts, 1], device="cuda")
 
             #inside(f(x) < 0)
             _geo_grid_pts = (dist - self.inside_extent.item() / 5) *2
-
+            inside_mask = (dist <= self.inside_extent.item() * 4.0)  # inside bound
+            outside_mask = ~inside_mask
+            _geo_grid_pts[outside_mask] = self.inside_extent.item()*5-dist[outside_mask]
             #outside (f(x) >> 0)
-            _geo_grid_pts[outside_mask] = torch.empty_like(dist[outside_mask]).uniform_(self.inside_extent.item()*0.617, self.inside_extent.item()*0.867)
+            #_geo_grid_pts[outside_mask] = torch.empty_like(dist[outside_mask]).uniform_(self.inside_extent.item()*0.617, self.inside_extent.item()*0.867)
         elif mode ==2:
             if hasattr(self, 'model_path') and self.model_path:
                 # exist_ok=True �ɼ��� ���丮�� �̹� �����ص� ������ �߻���Ű�� �ʽ��ϴ�.
@@ -171,7 +172,6 @@ class SVConstructor:
             inside_mask = (dist <= self.inside_extent.item() * 4.0)  # inside bound
             outside_mask = ~inside_mask
             _geo_grid_pts[outside_mask] = self.inside_extent.item()*5-dist[outside_mask]
-
         _rgb = torch.full([N, 3], cfg_init.sh0_init, dtype=torch.float32, device="cuda")
         
         _shs = torch.full([N, (self.max_sh_degree+1)**2 - 1, 3], cfg_init.shs_init, dtype=torch.float32, device="cuda")
