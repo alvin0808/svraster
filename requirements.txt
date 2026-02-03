@@ -20,3 +20,6 @@ gpytoolbox
 lpips
 pytorch-msssim
 git+https://github.com/rahul-goel/fused-ssim/
+
+huggingface_hub
+safetensors

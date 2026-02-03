@@ -13,12 +13,42 @@ We extend the recently proposed sparse voxel rasterization paradigm to the task 
 - This project is under active development and not ready for stable use yet. We will update instructions and benchmarks soon.
 
 ## Install
-1. Install Pytorch first. The tested versions are `1.13.1+cu117` and `2.5.0+cu124`.
-2. May need to install cuda-toolkit for your virtual environment that is aligned with the installed pytorch:
-    - `conda install -y -c "nvidia/label/cuda-11.7.0" cuda-toolkit`
-    - `conda install -y -c "nvidia/label/cuda-12.4.0" cuda-toolkit`
-3. `pip install -r requirements.txt` for other packages.
-4. `pip install -e cuda/` for sparse voxel CUDA rasterizer and some utilities.
+### 1) Clone this repository (with PI3 submodule)
+```bash
+git clone --recursive https://github.com/alvin0808/SVRecon.git
+cd SVRecon
+
+# If you already cloned without --recursive:
+git submodule update --init --recursive
+```
+### 2) Create conda environment
+```bash
+conda create -n svrecon python=3.10 -y
+conda activate svrecon
+```
+### 3) Install PyTorch (tested: 2.5.0 + CUDA 12.4)
+```bash
+pip install torch==2.5.0 torchvision==0.20.0 \
+  --index-url https://download.pytorch.org/whl/cu124
+```
+### 4) (Optional) Install CUDA toolkit inside the conda env
+
+May need to install cuda-toolkit for your virtual environment that is aligned with the installed pytorch:
+```bash
+conda install -y -c "nvidia/label/cuda-12.4.0" cuda-toolkit
+```
+### 5) Install Python dependencies (includes PI3 deps)
+```bash
+pip install -r requirements.txt
+```
+
+### 6) Build and install sparse voxel CUDA rasterizer
+
+If the build process cannot find torch due to build isolation, use --no-build-isolation.
+```bash
+pip install -e cuda/ --no-build-isolation
+```
+
 
 
 ## Reconstructing your own capture
