@@ -238,7 +238,7 @@ def extract_mesh(args, data_pack, voxel_model, final_lv, crop_bbox, use_lv_avg, 
         iso=iso)
     mesh = trimesh.Trimesh(verts.cpu().numpy(), faces.cpu().numpy())
     return mesh
-
+'''
 def extract_mesh_sdf(args, voxel_model, final_lv, crop_bbox, use_lv_avg, iso=0.0):
     import torch
     import trimesh
@@ -333,7 +333,52 @@ def extract_mesh_sdf(args, voxel_model, final_lv, crop_bbox, use_lv_avg, iso=0.0
     )
     mesh = trimesh.Trimesh(verts.cpu().numpy(), faces.cpu().numpy())
     return mesh
+'''
+def extract_mesh_sdf(args, voxel_model, final_lv, crop_bbox, use_lv_avg=False, iso=0.0):
+    import torch
+    import trimesh
 
+    # 1. bbox 안쪽 grid/voxel만 선택
+    if crop_bbox is None:
+        inside_min = voxel_model.scene_center - 0.5 * voxel_model.inside_extent * args.bbox_scale
+        inside_max = voxel_model.scene_center + 0.5 * voxel_model.inside_extent * args.bbox_scale
+    else:
+        inside_min = torch.tensor(crop_bbox[0], dtype=torch.float32, device="cuda")
+        inside_max = torch.tensor(crop_bbox[1], dtype=torch.float32, device="cuda")
+
+    # grid point 기준 inside 여부
+    inside_mask = ((inside_min <= voxel_model.grid_pts_xyz) &
+                   (voxel_model.grid_pts_xyz <= inside_max)).all(-1)
+    # 그 grid들을 코너로 쓰는 voxel 중 하나라도 inside면 그 voxel 사용
+    inside_mask = inside_mask[voxel_model.vox_key].any(-1)
+    inside_idx = torch.where(inside_mask)[0]
+
+    print(f"[SDF] #inside voxels = {len(inside_idx)}")
+
+    # 2. SDF 스칼라 필드 만들기 (채널 싹 제거해서 1D로)
+    base_sdf = voxel_model._geo_grid_pts          # 보통 [N] 또는 [N, C]
+    if base_sdf.ndim > 1:
+        # 마지막 채널 중 첫 번째를 SDF로 사용
+        if base_sdf.shape[-1] > 1:
+            base_sdf = base_sdf[..., 0]
+        # 남은 차원 싹 풀어서 1D로 만들기
+        base_sdf = base_sdf.reshape(-1)
+    base_sdf = base_sdf.contiguous()
+
+    print(f"[SDF] base_sdf shape: {base_sdf.shape}")
+    print(f"[SDF] grid_pts_xyz shape: {voxel_model.grid_pts_xyz.shape}")
+    print(f"[SDF] vox_key shape (subset): {voxel_model.vox_key[inside_idx].shape}")
+
+    # 3. Marching Cubes: 기존 dense grid + bbox 안쪽 voxel만 사용
+    verts, faces = svraster_cuda.marching_cubes.torch_marching_cubes_grid(
+        grid_pts_val=base_sdf,                   # 전체 grid SDF 값
+        grid_pts_xyz=voxel_model.grid_pts_xyz,   # 전체 grid 좌표
+        vox_key=voxel_model.vox_key[inside_idx], # bbox 안쪽 voxel만
+        iso=iso,
+    )
+
+    mesh = trimesh.Trimesh(verts.cpu().numpy(), faces.cpu().numpy())
+    return mesh
 
 def direct_mc(args, voxel_model, final_lv, crop_bbox):
     # Filter background voxels

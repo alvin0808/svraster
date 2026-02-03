@@ -1,18 +1,16 @@
-# Sparse Voxels Rasterizer
+# SVRecon: Sparse Voxel Rasterization for Surface Reconstruction
 
-![teaser](./asset/teaser.jpg)
+![teaser](./asset/fig1_teaser.jpg)
 
-### [Project page](https://svraster.github.io) | [Arxiv](https://arxiv.org/abs/2412.04459) | [jupyter notebooks](./notebooks/)
+### [Project page](https://jaesung-choe.github.io/svrecon/index.html) | [Arxiv](https://arxiv.org/abs/2511.17364) 
 
 <details>
 <summary>Paper abstract</summary>
-We propose an efficient radiance field rendering algorithm that incorporates a rasterization process on adaptive sparse voxels without neural networks or 3D Gaussians. There are two key contributions coupled with the proposed system. The first is to adaptively and explicitly allocate sparse voxels to different levels of detail within scenes, faithfully reproducing scene details with 65536^3 grid resolution while achieving high rendering frame rates. Second, we customize a rasterizer for efficient adaptive sparse voxels rendering. We render voxels in the correct depth order by using ray direction-dependent Morton ordering, which avoids the well-known popping artifact found in Gaussian splatting. Our method improves the previous neural-free voxel model by over 4db PSNR and more than 10x FPS speedup, achieving state-of-the-art comparable novel-view synthesis results. Additionally, our voxel representation is seamlessly compatible with grid-based 3D processing techniques such as Volume Fusion, Voxel Pooling, and Marching Cubes, enabling a wide range of future extensions and applications.
+We extend the recently proposed sparse voxel rasterization paradigm to the task of high-fidelity surface reconstruction by integrating Signed Distance Function (SDF), named SVRecon. Unlike 3D Gaussians, sparse voxels are spatially disentangled from their neighbors and have sharp boundaries, which makes them prone to local minima during optimization. Although SDF values provide a naturally smooth and continuous geometric field, preserving this smoothness across independently parameterized sparse voxels is nontrivial. To address this challenge, we promote coherent and smooth voxel-wise structure through (1) robust geometric initialization using a visual geometry model and (2) a spatial smoothness loss that enforces coherent relationships across parent-child and sibling voxel groups. Extensive experiments across various benchmarks show that our method achieves strong reconstruction accuracy while having consistently speedy convergence.
 </details>
 
 **Updates:**
-- Enter --seunghun in the train.py command to use sdf mode.
-- Mar 18, 2025: Revise literature review. Support depthanythingv2 relative depth loss and mast3r metric depth loss for a better geometry.
-- Mar 8, 2025: Support ScanNet++ dataset. Check the [benchmark](https://kaldir.vc.in.tum.de/scannetpp/benchmark/nvs) for our results on the 3rd-party hidden set evaluation. Our [short article](./articles/scannetpp_dataset.md) may be helpful if you want to work on scannet or indoor environement.
+- This project is under active development and not ready for stable use yet. We will update instructions and benchmarks soon.
 
 ## Install
 1. Install Pytorch first. The tested versions are `1.13.1+cu117` and `2.5.0+cu124`.
@@ -98,15 +96,6 @@ python render.py $OUTPUT_PATH --eval_fps
 - Render fly-through video:
     - `python render_fly_through.py $OUTPUT_PATH`
 
-### Interactive viewer
-```bash
-python viz.py $OUTPUT_PATH
-```
-You can then navigate the trained scenes using a web browser. Another interactive viewer is in [example jupyter notebook](./notebooks/example.ipynb) using Kaolin. The FPS of the visualizer is bottleneck by streaming images via network protocal, especially when the it runs on remote server.
-
-https://github.com/user-attachments/assets/44f1737a-c4d3-416d-bdf1-da8b3ecad57b
-
-WebGL is now supported. Thanks [samuelm2](https://github.com/samuelm2) for implementing the [svraster-webgl](https://github.com/samuelm2/svraster-webgl/) viewer.
 
 ### Meshing
 Remember to train with `--lambda_normal_dmean 0.001 --lambda_normal_dmed 0.001` to get a better geometry. Using sparse depth from COLMAP may also help `--lambda_sparse_depth 0.01`. After the scene optimization completed, run:
@@ -114,15 +103,6 @@ Remember to train with `--lambda_normal_dmean 0.001 --lambda_normal_dmed 0.001` 
 python extract_mesh.py $OUTPUT_PATH
 ```
 
-### Fusing 2D modality
-We can fuse 2D vision foundation feature or sementic segmentation results into voxels easily and instantly. The fusion can naturally smooth out the multi-view inconsistent predictions. More video results are in the [project page](https://svraster.github.io/).
-- [demo_segformer.ipynb](./notebooks/demo_segformer.ipynb)
-    - We run Segformer to estimate 2D semantic segmentation for all the training views and fuse the 2D semantic into 3D sparse voxel field.
-    - ![fusing_segformer](asset/fusing_segformer.jpg)
-- [demo_vfm_radio.ipynb](./notebooks/demo_vfm_radio.ipynb)
-    - We do Voxel Pooling first as RADIOv2.5 feature is high-dimensional (768 dim). The fusion step is the same as for Segformer.
-    - The final fields are a coarser vision foundation model feature field and a density field in original high-resolution.
-    - ![fusing_radio](asset/fusing_radio.jpg)
 
 ## Experiments on public dataset
 
@@ -164,15 +144,14 @@ python scripts/tnt_stat.py            output/tnt/baseline
 
 
 ## Acknowledgement
-Our method is developed on the amazing open-source codebase: [gaussian-splatting](https://github.com/graphdeco-inria/gaussian-splatting) and [diff-gaussian-rasterization](https://github.com/graphdeco-inria/diff-gaussian-rasterization).
+Our method is developed on the amazing open-source codebase: [SVRaster](https://github.com/NVlabs/svraster), [gaussian-splatting](https://github.com/graphdeco-inria/gaussian-splatting) and [diff-gaussian-rasterization](https://github.com/graphdeco-inria/diff-gaussian-rasterization).
 
 If you find our work useful in your research, please be so kind to give us a star and citing our paper.
 ```bibTeX
-@article{Sun2024SVR,
-  title={Sparse Voxels Rasterization: Real-time High-fidelity Radiance Field Rendering},
-  author={Cheng Sun and Jaesung Choe and Charles Loop and Wei-Chiu Ma and Yu-Chiang Frank Wang},
-  journal={ArXiv},
-  year={2024},
-  volume={abs/2412.04459},
+@article{oh2025svrecon,
+  title={SVRecon: Sparse Voxel Rasterization for Surface Reconstruction},
+  author={Oh, Seunghun and Choe, Jaesung and Lee, Dongjae and Lee, Daeun and Jeong, Seunghoon and Wang, Yu-Chiang Frank and Park, Jaesik},
+  journal={arXiv preprint arXiv:2511.17364},
+  year={2025}
 }
 ```

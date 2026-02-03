@@ -96,8 +96,9 @@ for scene in os.listdir(args.dataset_root):
             "cy_p": cy / h,
             "transform_matrix": c2w.tolist()
         }
-        if idx % 8 == 9:
+        if idx % 8 == 0:
             test['frames'].append(frame)
+            train['frames'].append(frame)
         else:
             train['frames'].append(frame)
 

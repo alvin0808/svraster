@@ -45,6 +45,7 @@ import svraster_cuda
 
 
 def training(args): 
+    time = -1
     # Init and load data pack
     data_pack = DataPack(cfg.data, cfg.model.white_background) #data_pack.py -> DataPack
 
@@ -122,7 +123,7 @@ def training(args):
         (i >= first_iter)
         for i in range(
             cfg.procedure.subdivide_from, cfg.procedure.subdivide_until+1,
-            cfg.procedure.subdivide_every
+            cfg.procedure.subdivide_every+250
         ) #range(1000, 15001, 1000)
     )
     subdivide_scale = cfg.procedure.subdivide_target_scale ** (1 / remain_subdiv_times)
@@ -244,10 +245,10 @@ def training(args):
                 voxel_model._log_s.add_(std_increase_rate)
         '''
         
-        if not hasattr(cfg.regularizer, "_ge_final"):
-            cfg.regularizer._ge_final = float(cfg.regularizer.lambda_ge_density)
-        if not hasattr(cfg.regularizer, "_ls_final"):
-            cfg.regularizer._ls_final = float(cfg.regularizer.lambda_ls_density)
+        # if not hasattr(cfg.regularizer, "_ge_final"):
+        #     cfg.regularizer._ge_final = float(cfg.regularizer.lambda_ge_density)
+        # if not hasattr(cfg.regularizer, "_ls_final"):
+        #     cfg.regularizer._ls_final = float(cfg.regularizer.lambda_ls_density)
         '''
         # 占쎈뮞��놂옙餓ο옙 占쎌읅占쎌뒠
         if iteration <1000:
@@ -286,8 +287,8 @@ def training(args):
                 voxel_model._log_s.add_(std_increase_rate)
 
 
-        if(iteration %100 ==0):
-            print(f"iteration {iteration} log_s = {voxel_model._log_s.item():.9f}")
+        # if(iteration %100 ==0):
+        #     print(f"iteration {iteration} log_s = {voxel_model._log_s.item():.9f}")
         need_sparse_depth = cfg.regularizer.lambda_sparse_depth > 0 and sparse_depth_loss.is_active(iteration)
         need_depthanythingv2 = cfg.regularizer.lambda_depthanythingv2 > 0 and depthanythingv2_loss.is_active(iteration)
         need_mast3r_metric_depth = cfg.regularizer.lambda_mast3r_metric_depth > 0 and mast3r_metric_depth_loss.is_active(iteration)
@@ -338,9 +339,9 @@ def training(args):
         loss_dict = {"photo": loss_photo}
         '''
         # Loss
-        #gt_mask = cam.mask.cuda() 
+        gt_mask = cam.mask.cuda() 
 
-        gt_image_modified = gt_image #*gt_mask
+        gt_image_modified = gt_image *gt_mask
 
         mse = loss_utils.l2_loss(render_image, gt_image_modified)
 
@@ -356,14 +357,14 @@ def training(args):
         loss_dict = {"photo": loss_photo}
         # if need_sparse_depth: #sparse depth loss 占쎈툡占쎌뒄占쎈뻻
         #     loss += cfg.regularizer.lambda_sparse_depth * sparse_depth_loss(cam, render_pkg)
-        '''
+        
         loss_mask = 0
         if cfg.regularizer.lambda_mask: #筌띾뜆�뮞占쎄쾿 占쎈��占쎈뼄 占쎈툡占쎌뒄占쎈뻻
             gt_T = 1 - cam.mask.cuda()
             loss_mask += cfg.regularizer.lambda_mask * loss_utils.l2_loss(render_pkg['T'], gt_T)
             loss+=loss_mask
             loss_dict["mask"] = loss_mask
-        '''
+        
         '''
         loss_mask = 0
         if cfg.regularizer.lambda_mask:
@@ -430,12 +431,12 @@ def training(args):
         # lambda tv loss? voxel_model.optimizer.step() 濚욌꼬�눊�꽠占쎈쑏�뜝占�? (占쎌녃域뱄퐢荑덂뜝�럩援�?? 占쎈쨬占쎈즲占쎈쳮�뜝�럥爰� smoothness)
         # Backward to get gradient of current iteration
         
-        if iteration % 100 == 0:  # 50 iter筌띾뜄�뼄 �빊�뮆�젾
-            print(f"[iter {iteration}] loss breakdown:")
-            for name, val in loss_dict.items():
-                v = val.item()
-                isn = torch.isnan(val)
-                print(f"   {name:15s}: {v:.6e}{'  <-- NaN !!' if isn else ''}")
+        # if iteration % 100 == 0:  # 50 iter筌띾뜄�뼄 �빊�뮆�젾
+        #     print(f"[iter {iteration}] loss breakdown:")
+        #     for name, val in loss_dict.items():
+        #         v = val.item()
+        #         isn = torch.isnan(val)
+        #         print(f"   {name:15s}: {v:.6e}{'  <-- NaN !!' if isn else ''}")
 
         # 占쎌읈筌ｏ옙 loss NaN 筌ｋ똾寃�
         if torch.isnan(loss):
@@ -469,28 +470,28 @@ def training(args):
             gnorm = voxel_model._geo_grid_pts.grad.norm().item()
             print(f"[iter {iteration}] geo_grad_norm = {gnorm:.4e}")
         '''
-        if iteration % 100 == 0:
-            with torch.no_grad():
-                # non-leaf 마스크
-                nonleaf_mask = (~voxel_model.is_leaf.view(-1).bool())
+        # if iteration % 100 == 0:
+        #     with torch.no_grad():
+        #         # non-leaf 마스크
+        #         nonleaf_mask = (~voxel_model.is_leaf.view(-1).bool())
 
-                # 레벨 벡터
-                levels = voxel_model.octlevel.view(-1).to(torch.int64)
+        #         # 레벨 벡터
+        #         levels = voxel_model.octlevel.view(-1).to(torch.int64)
 
-                # non-leaf들만 레벨별 개수 집계
-                levels_nonleaf = levels[nonleaf_mask]
-                if levels_nonleaf.numel() == 0:
-                    print("  [voxels] non-leaf: 0")
-                else:
-                    uniq_lvls, counts = torch.unique(levels_nonleaf, return_counts=True)
-                    order = torch.argsort(uniq_lvls)
-                    uniq_lvls = uniq_lvls[order].tolist()
-                    counts = counts[order].tolist()
+        #         # non-leaf들만 레벨별 개수 집계
+        #         levels_nonleaf = levels[nonleaf_mask]
+        #         if levels_nonleaf.numel() == 0:
+        #             print("  [voxels] non-leaf: 0")
+        #         else:
+        #             uniq_lvls, counts = torch.unique(levels_nonleaf, return_counts=True)
+        #             order = torch.argsort(uniq_lvls)
+        #             uniq_lvls = uniq_lvls[order].tolist()
+        #             counts = counts[order].tolist()
 
-                    total_nonleaf = int(sum(counts))
-                    print(f"  [voxels] non-leaf total: {total_nonleaf}")
-                    for L, C in zip(uniq_lvls, counts):
-                        print(f"    - level {L-cfg.model.outside_level}: {C}")
+        #             total_nonleaf = int(sum(counts))
+        #             print(f"  [voxels] non-leaf total: {total_nonleaf}")
+        #             for L, C in zip(uniq_lvls, counts):
+        #                 print(f"    - level {L-cfg.model.outside_level}: {C}")
         # INSERT_YOUR_CODE
         # 占쎌삏占쎈쐭筌랃옙 png 占쎌뵠占쎄숲占쎌쟿占쎌뵠占쎈�∽쭕�뜄�뼄 占쏙옙占쏙옙�삢
         '''
@@ -554,7 +555,7 @@ def training(args):
                     f"rms: {rms:.6e}"                       # 占쎌젫��④퉲猷딀뉩占�
                 )
         voxel_gradient_interval = iteration >= cfg.regularizer.vg_from and iteration <= cfg.regularizer.vg_until
-        if cfg.regularizer.lambda_vg_density and voxel_gradient_interval:
+        if cfg.regularizer.lambda_vg_density and voxel_gradient_interval :
             asdf = voxel_model._geo_grid_pts.grad * 10000
             G = voxel_model.vox_size_inv.numel()
             K =  int(G * (1.0 - float(cfg.regularizer.vg_drop_ratio)))
@@ -583,7 +584,7 @@ def training(args):
                 )
         
         grid_eikonal_interval = iteration >= cfg.regularizer.ge_from and iteration <= cfg.regularizer.ge_until
-        if cfg.regularizer.lambda_ge_density and grid_eikonal_interval:
+        if cfg.regularizer.lambda_ge_density and grid_eikonal_interval :
             # if iteration == 3000:
             #     print("Eikonal loss applied (before)")
             asdf = voxel_model._geo_grid_pts.grad * 10000
@@ -611,22 +612,22 @@ def training(args):
                 grid_pts_grad=voxel_model._geo_grid_pts.grad)
             # if iteration == 1000:
             #     print("Eikonal loss applied (after)")
-            qwer = voxel_model._geo_grid_pts.grad * 10000
-            if iteration % 100 == 0:
-                diff = qwer - asdf
-                # 占쎌젫��④퉲猷딀뉩占� (root mean square)
-                rms = torch.sqrt(torch.mean(diff ** 2)).item()
+            # qwer = voxel_model._geo_grid_pts.grad * 10000
+            # if iteration % 100 == 0:
+            #     diff = qwer - asdf
+            #     # 占쎌젫��④퉲猷딀뉩占� (root mean square)
+            #     rms = torch.sqrt(torch.mean(diff ** 2)).item()
 
-                print("---")
-                print(
-                    f"min: {torch.min(diff).item():.6e}",   # 筌ㅼ뮇�꺖揶쏉옙 (��⑥눛釉곤옙�읅 占쎈ご疫뀐옙)
-                    f"max: {torch.max(diff).item():.6e}",   # 筌ㅼ뮆占쏙옙揶쏉옙
-                    f"rms: {rms:.6e}"                       # 占쎌젫��④퉲猷딀뉩占�
-                )
+            #     print("---")
+            #     print(
+            #         f"min: {torch.min(diff).item():.6e}",   # 筌ㅼ뮇�꺖揶쏉옙 (��⑥눛釉곤옙�읅 占쎈ご疫뀐옙)
+            #         f"max: {torch.max(diff).item():.6e}",   # 筌ㅼ뮆占쏙옙揶쏉옙
+            #         f"rms: {rms:.6e}"                       # 占쎌젫��④퉲猷딀뉩占�
+            #     )
             # breakpoint()
         
         laplacian_interval = iteration >= cfg.regularizer.ls_from and iteration <= cfg.regularizer.ls_until
-        if cfg.regularizer.lambda_ls_density and laplacian_interval:
+        if cfg.regularizer.lambda_ls_density and laplacian_interval :
             asdf = voxel_model._geo_grid_pts.grad * 10000
             lambda_ls_mult = cfg.regularizer.ls_decay_mult ** min(iteration // cfg.regularizer.ls_decay_every, 2)
             G = voxel_model.grid_keys.numel()
@@ -650,17 +651,17 @@ def training(args):
                 tv_sparse=cfg.regularizer.ls_sparse,
                 grid_pts_grad=voxel_model._geo_grid_pts.grad)
             qwer = voxel_model._geo_grid_pts.grad * 10000
-            if iteration % 100 == 0:
-                diff = qwer - asdf
-                # 占쎌젫��④퉲猷딀뉩占� (root mean square)
-                rms = torch.sqrt(torch.mean(diff ** 2)).item()
+            # if iteration % 100 == 0:
+            #     diff = qwer - asdf
+            #     # 占쎌젫��④퉲猷딀뉩占� (root mean square)
+            #     rms = torch.sqrt(torch.mean(diff ** 2)).item()
 
-                print("---")
-                print(
-                    f"min: {torch.min(diff).item():.6e}",   # 筌ㅼ뮇�꺖揶쏉옙 (��⑥눛釉곤옙�읅 占쎈ご疫뀐옙)
-                    f"max: {torch.max(diff).item():.6e}",   # 筌ㅼ뮆占쏙옙揶쏉옙
-                    f"rms: {rms:.6e}"                       # 占쎌젫��④퉲猷딀뉩占�
-                )
+            #     print("---")
+            #     print(
+            #         f"min: {torch.min(diff).item():.6e}",   # 筌ㅼ뮇�꺖揶쏉옙 (��⑥눛釉곤옙�읅 占쎈ご疫뀐옙)
+            #         f"max: {torch.max(diff).item():.6e}",   # 筌ㅼ뮆占쏙옙揶쏉옙
+            #         f"rms: {rms:.6e}"                       # 占쎌젫��④퉲猷딀뉩占�
+            #     )
             
         points_interval = iteration >= cfg.regularizer.points_loss_from and cfg.regularizer.points_loss_until >= iteration
         if cfg.regularizer.lambda_points_density and points_interval:
@@ -691,16 +692,16 @@ def training(args):
                 tv_sparse=cfg.regularizer.points_loss_sparse,
                 grid_pts_grad=voxel_model._geo_grid_pts.grad
             )
-            qwer = voxel_model._geo_grid_pts.grad * 10000
-            if iteration % 100 == 0:
-                diff = qwer - asdf
-                rms = torch.sqrt(torch.mean(diff ** 2)).item()
-                print("---")
-                print(
-                    f"min: {torch.min(diff).item():.6e}",  
-                    f"max: {torch.max(diff).item():.6e}",   
-                    f"rms: {rms:.6e}"                       
-                )
+            # qwer = voxel_model._geo_grid_pts.grad * 10000
+            # if iteration % 100 == 0:
+            #     diff = qwer - asdf
+            #     rms = torch.sqrt(torch.mean(diff ** 2)).item()
+            #     print("---")
+            #     print(
+            #         f"min: {torch.min(diff).item():.6e}",  
+            #         f"max: {torch.max(diff).item():.6e}",   
+            #         f"rms: {rms:.6e}"                       
+            #     )
         
         # Optimizer step
         voxel_model.optimizer.step()  # SVOptimizer
@@ -714,10 +715,10 @@ def training(args):
         
         for pg in voxel_model.optimizer.param_groups:
             if pg.get("name") == "_geo_grid_pts":
-                if iteration < 100:
+                if iteration < 1:
                     pg["lr"] = 0.0
                     pg["base_lr"] = 0.0  # warmup이 다시 키우지 못하게 base도 0으로
-                elif iteration == 100:
+                elif iteration == 1:
                     val = cfg.optimizer.geo_lr  # 위에서 세팅해 둔 최종 geo lr
                     pg["lr"] = val
                     pg["base_lr"] = val
@@ -827,7 +828,7 @@ def training(args):
                 if iteration ==2000:
                     sdf_thresh *=2
                     '''
-                prune_mask = (~has_surface) & (min_abs_sdf > sdf_thresh) 
+                prune_mask = (~has_surface) & (min_abs_sdf > sdf_thresh) & voxel_model.inside_mask
             elif cfg.model.density_mode == 'sdf':
                 sdf_vals = voxel_model._geo_grid_pts[voxel_model.vox_key]  # [N, 8, 1]
                 min_abs_sdf = sdf_vals.abs().min(dim=1).values.view(-1)  # avg??
@@ -1014,7 +1015,7 @@ def training(args):
         iter_end.record()
         torch.cuda.synchronize()
         elapsed += iter_start.elapsed_time(iter_end)
-
+        
         # Logging
         with torch.no_grad():
             # Metric
@@ -1036,7 +1037,12 @@ def training(args):
                 progress_bar.close()
 
             # Log and save `
-            
+            # replace:
+            save = False
+            if time < int(elapsed // 1000):
+                # 밀리초 -> 초(정수 몫)
+                time = int(elapsed // 1000)
+                save = True
             training_report(
                 data_pack=data_pack,
                 voxel_model=voxel_model,
@@ -1044,6 +1050,7 @@ def training(args):
                 loss=loss,
                 psnr=psnr,
                 elapsed=elapsed,
+                save = save,
                 ema_psnr=ema_psnr_for_log,
                 pg_view_every=args.pg_view_every,
                 test_iterations=args.test_iterations) 
@@ -1055,8 +1062,9 @@ def training(args):
                 print(f"[SAVE] path={voxel_model.latest_save_path}")
 
 
-def training_report(data_pack, voxel_model, iteration, loss, psnr, elapsed, ema_psnr, pg_view_every, test_iterations):
+def training_report(data_pack, voxel_model, iteration, loss, psnr, elapsed, save, ema_psnr, pg_view_every, test_iterations):
 
+    '''
     voxel_model.freeze_vox_geo()
     if pg_view_every > 0 and (iteration % pg_view_every == 0 or iteration == 1):
         torch.cuda.empty_cache()
@@ -1082,7 +1090,9 @@ def training_report(data_pack, voxel_model, iteration, loss, psnr, elapsed, ema_
         eps_file = os.path.join(voxel_model.model_path, "pg_view", "eps.txt")
         with open(eps_file, 'a') as f:
             f.write(f"{iteration},{elapsed/1000:.1f}\n") 
+    
     voxel_model.unfreeze_vox_geo()
+    '''
     
     # Progress view
     if pg_view_every > 0 and (iteration % pg_view_every == 0 or iteration == 1):
@@ -1098,7 +1108,7 @@ def training_report(data_pack, voxel_model, iteration, loss, psnr, elapsed, ema_
         render_depth_med = render_pkg['depth'][2]
         render_normal = render_pkg['normal']
         render_alpha = 1 - render_pkg['T'][0]
-
+        '''
         im = np.concatenate([
             np.concatenate([
                 im_tensor2np(render_image),
@@ -1106,27 +1116,117 @@ def training_report(data_pack, voxel_model, iteration, loss, psnr, elapsed, ema_
             ], axis=1),
             np.concatenate([
                 viz_tensordepth(render_depth, render_alpha),
-                im_tensor2np(render_normal * 0.5 + 0.5),
+                im_tensor2np(-render_normal * 0.5 + 0.5),
             ], axis=1),
             np.concatenate([
-                im_tensor2np(-view.depth2normal(render_depth) * 0.5 + 0.5),
-                im_tensor2np(-view.depth2normal(render_depth_med) * 0.5 + 0.5),
+                im_tensor2np(view.depth2normal(render_depth) * 0.5 + 0.5),
+                im_tensor2np(view.depth2normal(render_depth_med) * 0.5 + 0.5),
             ], axis=1),
         ], axis=0)
+        '''
+        render_img = im_tensor2np(render_image)
+        depth_img  = viz_tensordepth(render_depth_med, render_alpha)
+        normal_img = im_tensor2np(-render_normal * 0.5 + 0.5)
+
+        # 공통으로 사용할 가로길이 정하기
+        # (세 이미지 가로길이 다를 가능성까지 안전하게 처리)
+        ratio = 0.85  # 80%
+        w = min(render_img.shape[1], depth_img.shape[1], normal_img.shape[1])
+        new_w = int(w * ratio)
+
+        render_img = render_img[:, :new_w]
+        depth_img  = depth_img[:, :new_w]
+        normal_img = normal_img[:, :new_w]
+
+        im = np.concatenate([
+            np.concatenate([
+                render_img,
+                depth_img,
+                normal_img,
+            ], axis=1),
+        ], axis=0)
+        from PIL import Image, ImageDraw, ImageFont  # 파일 상단으로 빼도 됨
+
+        # im이 float일 수도 있으니 uint8 보정
+        if im.dtype != np.uint8:
+            im_uint8 = np.clip(im, 0, 255).astype(np.uint8)
+        else:
+            im_uint8 = im
+
+        h, w, c = im_uint8.shape
+
+        # ✅ 흰색 바는 기존처럼 작게 유지 (원래 쓰던 값으로 두면 됨)
+        bar_h = 80  # 예: 40픽셀. 너가 쓰던 값 그대로 두면 됨.
+
+        # 흰 배경 캔버스 생성 (위: 이미지, 아래: 흰색 바)
+        canvas = np.ones((h + bar_h, w, 3), dtype=np.uint8) * 255
+        canvas[:h, :, :] = im_uint8
+
+        img_pil = Image.fromarray(canvas)
+        draw = ImageDraw.Draw(img_pil)
+
+        text = f"iter {iteration:06d}"
+
+        # ✅ 글자만 키우기: bar_h 안에 꽉 차게 (조금 여유 있게 0.8배)
+        font_size = int(bar_h * 0.8)  # bar_h가 40이면 폰트 32 정도
+
+        # Times New Roman 시도
+        font = None
+        tried_paths = [
+            "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf",
+            "/usr/share/fonts/truetype/msttcorefonts/times.ttf",
+            "C:/Windows/Fonts/times.ttf",
+            "C:/Windows/Fonts/times.TTF",
+            "C:/Windows/Fonts/timesnewroman.ttf",
+            "C:/Windows/Fonts/timesbd.ttf",
+        ]
+
+        for p in tried_paths:
+            if os.path.exists(p):
+                try:
+                    font = ImageFont.truetype(p, font_size)
+                    print(f"[INFO] Using font: {p}")
+                    break
+                except Exception:
+                    pass
+
+        if font is None:
+            #print("[WARN] Times New Roman not found, using default font.")
+            # 기본 폰트도 크기 지정 가능한 버전으로 시도
+            try:
+                font = ImageFont.truetype("DejaVuSans.ttf", font_size)
+            except Exception:
+                font = ImageFont.load_default()
+
+        # 텍스트 크기 계산
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+
+        margin_x = 20
+        margin_y = (bar_h - text_h) // 2  # bar 안에서 세로 가운데 정렬
+
+        x = w - text_w - margin_x         # 오른쪽 끝 정렬
+        y = h + margin_y                  # 아래 흰색 바 안
+
+        draw.text((x, y), text, font=font, fill=(0, 0, 0))
+
+        canvas = np.array(img_pil)
+        # ===== 여기까지 추가 =====
         torch.cuda.empty_cache()
 
         outdir = os.path.join(voxel_model.model_path, "pg_view")
         outpath = os.path.join(outdir, f"iter{iteration:06d}.jpg")
         os.makedirs(outdir, exist_ok=True)
 
-        imageio.imwrite(outpath, im)
+        imageio.imwrite(outpath, canvas)
 
         eps_file = os.path.join(voxel_model.model_path, "pg_view", "eps.txt")
         with open(eps_file, 'a') as f:
             f.write(f"{iteration},{elapsed/1000:.1f}\n")
    
     # Report test and samples of training set
-    if iteration in test_iterations:
+    if iteration in test_iterations or iteration % 8000 == 0:
         print(f"[EVAL] running...")
         torch.cuda.empty_cache()
         test_cameras = data_pack.get_test_cameras()
@@ -1139,8 +1239,14 @@ def training_report(data_pack, voxel_model, iteration, loss, psnr, elapsed, ema_
         for idx, camera in enumerate(test_cameras):
             render_pkg = voxel_model.render(camera, output_normal=True, track_max_w=True)
             render_image = render_pkg['color']
-            im = im_tensor2np(render_image)
-            gt = im_tensor2np(camera.image)
+            mask = camera.mask.detach().cpu().numpy()   # (1,H,W) or (H,W)
+            mask = mask.squeeze()                       # -> (H,W)
+            mask = (mask > 0.5).astype(np.uint8)        # 0/1
+            mask3 = mask[..., None]   
+            im_ps = im_tensor2np(render_image) * mask3
+            gt_ps = im_tensor2np(camera.image) * mask3
+            im = im_tensor2np(render_image) 
+            gt = im_tensor2np(camera.image) 
             video.append(im)
             if idx % save_every == 0:
                 outpath = os.path.join(outdir, f"idx{idx:04d}_iter{iteration:06d}.jpg")
@@ -1151,7 +1257,7 @@ def training_report(data_pack, voxel_model, iteration, loss, psnr, elapsed, ema_
                 render_normal = render_pkg['normal']
                 render_normal = im_tensor2np(render_normal * 0.5 + 0.5)
                 imageio.imwrite(outpath, render_normal)
-            mse = np.square(im/255 - gt/255).mean()
+            mse = np.square(im_ps/255 - gt_ps/255).mean()
             psnr_lst.append(-10 * np.log10(mse))
             max_w = torch.maximum(max_w, render_pkg['max_w'])
         avg_psnr = np.mean(psnr_lst)
@@ -1220,7 +1326,7 @@ if __name__ == "__main__":
     parser.add_argument('--cfg_files', default=[], nargs='*')
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="*", type=int, default=[-1])
-    parser.add_argument("--pg_view_every", type=int, default=200)
+    parser.add_argument("--pg_view_every", type=int, default=100)
     parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
     parser.add_argument("--load_iteration", type=int, default=None)
     parser.add_argument("--load_optimizer", action='store_true')
@@ -1248,15 +1354,15 @@ if __name__ == "__main__":
         cfg.regularizer.tv_from = 0000
         cfg.regularizer.tv_until = 4000
         cfg.regularizer.lambda_ascending = 0.0
-        cfg.regularizer.ascending_from = 0
+        cfg.regularizer.ascending_from = 6000
         cfg.regularizer.lambda_normal_dmean = 0.001
         cfg.regularizer.n_dmean_from = 2000  # 
         cfg.regularizer.lambda_normal_dmed = 0.001
         cfg.regularizer.n_dmed_from = 1000
-        cfg.procedure.prune_from = 00
+        cfg.procedure.prune_from = 1000
         cfg.procedure.prune_every = 1000
         cfg.procedure.prune_until = 9000
-        cfg.procedure.subdivide_from = 0
+        cfg.procedure.subdivide_from = 100
         cfg.procedure.subdivide_every = 250
         cfg.regularizer.lambda_mask = 0.0
 

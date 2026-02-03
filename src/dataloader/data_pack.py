@@ -29,7 +29,7 @@ class DataPack:
         sparse_path = os.path.join(cfg_data.source_path, "sparse")
         colmap_path = os.path.join(cfg_data.source_path, "colmap", "sparse")
         meta_path1 = os.path.join(cfg_data.source_path, "transforms_train.json")
-        meta_path2 = os.path.join(cfg_data.source_path, "transforms.json")
+        meta_path2 = os.path.join(cfg_data.source_path, "transforms.json") 
 
         if os.path.exists(sparse_path) or os.path.exists(colmap_path):
             print("Read dataset in COLMAP format.")
@@ -110,29 +110,53 @@ def compute_iter_idx(num_data, num_iter):
         tr_iter_idx.extend(lst)
     return tr_iter_idx[:num_iter]
 
+'''
 def compute_iter_idx_sparse(num_data, num_iter, skip_num=1):
     tr_iter_idx = []
+    
     while len(tr_iter_idx) < num_iter:
         lst = list(range(0, num_data, skip_num))
         random.shuffle(lst)
         tr_iter_idx.extend(lst)
     return tr_iter_idx[:num_iter]
+    '''
+def compute_iter_idx_sparse(num_data, num_iter, skip_num=1):
+    tr_iter_idx = []
+
+    # 0, 8, 16, ... 제외한 후보 인덱스만 미리 만들어둠
+    base = [i for i in range(0, num_data, skip_num) if (i % 8) != 0]
+
+    while len(tr_iter_idx) < num_iter:
+        lst = base.copy()
+        random.shuffle(lst)
+        tr_iter_idx.extend(lst)
+
+    return tr_iter_idx[:num_iter]
 
 
 class CameraList:
     def __init__(self, cam_infos, cfg_data, dataset_downscale=1.0, camera_params_only=False):
+        count = 0
         if camera_params_only:
             self.camera_list = [
                 instantiate_a_minicamera(cam_info, cfg_data, dataset_downscale)
                 for cam_info in cam_infos
             ]
         else:
+            '''
             self.camera_list = [
                 instantiate_a_camera(cam_info, cfg_data, dataset_downscale)
                 for cam_info in cam_infos
             ]
             for i in range(len(cam_infos)):
-                self.camera_list[i] = self.camera_list[i].to(cfg_data.data_device)
+                self.camera_list[i] = self.camera_list[i].to(cfg_data.data_device)'''
+            self.camera_list = []
+            for cam_info in cam_infos:
+                count += 1
+                print(f"[CameraList] instantiate_a_camera called {count} time(s)")
+                cam = instantiate_a_camera(cam_info, cfg_data, dataset_downscale)
+                cam = cam.to(cfg_data.data_device)
+                self.camera_list.append(cam)
 
     def __len__(self):
         return len(self.camera_list)
@@ -158,22 +182,18 @@ def instantiate_a_camera(cam_info, cfg_data, dataset_downscale):
             print(f"       Use `--images`, `--res_downscale`, or `--res_width` to prevent it.")
     else:
         global_downscale = 1
-
     target_downscale = float(global_downscale * dataset_downscale)
     target_resolution = (round(W / target_downscale), round(H / target_downscale))
-
     # Resize image if needed
     if (W, H) != target_resolution:
         pil_image = cam_info.image.resize(target_resolution)
     else:
         pil_image = cam_info.image
-
     # Read color image
     gt_image = torch.tensor(np.array(pil_image), dtype=torch.float32).moveaxis(-1, 0) / 255.0
     mask = None
     if gt_image.shape[0] == 4:
         gt_image, mask = gt_image.split([3, 1], dim=0)
-
     # Load mask if exist
     if cam_info.mask is not None:
         if mask is not None:
@@ -186,7 +206,6 @@ def instantiate_a_camera(cam_info, cfg_data, dataset_downscale):
         if len(mask.shape) == 3:
             mask = mask.mean(-1)
         mask = mask.unsqueeze(0).contiguous()
-
     # Load depth if exist
     depth = None
     if cam_info.depth is not None:
@@ -214,7 +233,6 @@ def instantiate_a_camera(cam_info, cfg_data, dataset_downscale):
         normal_world = torch.einsum('ij,jhw->ihw', R_wc_t, normal_cam)        # [3,H,W]
 
         normal = F.normalize(normal_world, dim=0, eps=1e-8)
-
     return Camera(w2c=cam_info.w2c,
                   fovx=cam_info.fovx, fovy=cam_info.fovy,
                   cx_p=cam_info.cx_p, cy_p=cam_info.cy_p,

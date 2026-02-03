@@ -48,9 +48,13 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
         assert len(depth_paths) == len(keys), "Number of depth maps mismatched."
     conf_paths = []
     if normal_paths:
-        normal_paths = natsort.natsorted(glob.glob(normal_paths))
+        normal_paths = natsort.natsorted(
+            glob.glob(normal_paths, recursive=True)
+        )
+        #print(len(normal_paths), len(keys))
         assert len(normal_paths) == len(keys), "Number of normal maps mismatched."
-        conf_paths  = [p.replace("normal", "conf") for p in normal_paths]
+        conf_paths = [p.replace("normal", "conf") for p in normal_paths]
+
     if conf_paths:
         assert len(conf_paths) == len(keys), "Number of confidence maps mismatched."
         print(f"Found {len(conf_paths)} confidence maps.")
@@ -78,7 +82,7 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
         else:
             assert False, "Colmap camera model not handled: only undistorted datasets (PINHOLE or SIMPLE_PINHOLE cameras) supported!"
 
-        image_path = os.path.join(images_folder, os.path.basename(extr.name)) #image_path = os.path.join(images_folder, extr.name) #
+        image_path = os.path.join(images_folder, extr.name) #image_path = os.path.join(images_folder, os.path.basename(extr.name)) #
         if not os.path.isfile(image_path) and (image_path.endswith('jpg') or image_path.endswith('JPG')):
             image_path = image_path[:-3] + 'png'
         image_name = os.path.basename(image_path).split(".")[0]

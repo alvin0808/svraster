@@ -5,7 +5,9 @@ __pycache__/
 *.egg
 eggs/
 .eggs/
-
+*.db
+*.db-shm
+*.db-wal
 .ipynb_checkpoints/
 
 log

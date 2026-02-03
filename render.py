@@ -55,8 +55,8 @@ def render_set(name, iteration, suffix, args, views, voxel_model):
 
     tr_render_opt = {
         'track_max_w': False,
-        'output_depth': False, #not args.eval_fps,
-        'output_normal': False, #not args.eval_fps,
+        'output_depth': not args.eval_fps,
+        'output_normal': not args.eval_fps,
         'output_T': not args.eval_fps,
     }
 
@@ -67,6 +67,8 @@ def render_set(name, iteration, suffix, args, views, voxel_model):
     eps_time = time.perf_counter()
     psnr_lst = []
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
+        if args.mod_k > 1 and (idx % args.mod_k) != 0:
+            continue
         render_pkg = voxel_model.render(view, **tr_render_opt)
         if not args.eval_fps:
             rendering = render_pkg['color']
@@ -93,15 +95,16 @@ def render_set(name, iteration, suffix, args, views, voxel_model):
                 im_tensor2np(1-render_pkg['T'])[...,None].repeat(3, axis=-1)
             )
             # Depth
-            '''
+            
             imageio.imwrite(
                 os.path.join(viz_path, fname + ".depth_med_viz.jpg"),
                 viz_tensordepth(render_pkg['depth'][2])
             )
+            '''
             imageio.imwrite(
                 os.path.join(viz_path, fname + ".depth_viz.jpg"),
                 viz_tensordepth(render_pkg['depth'][0], 1-render_pkg['T'][0])
-            )
+            )'''
             # Normal 
             
             depth_med2normal = view.depth2normal(render_pkg['depth'][2])
@@ -110,16 +113,18 @@ def render_set(name, iteration, suffix, args, views, voxel_model):
                 os.path.join(viz_path, fname + ".depth_med2normal.jpg"),
                 im_tensor2np(depth_med2normal * 0.5 + 0.5)
             )
+            '''
             imageio.imwrite(
                 os.path.join(viz_path, fname + ".depth2normal.jpg"),
                 im_tensor2np(depth2normal * 0.5 + 0.5)
             )
+            '''
             render_normal = render_pkg['normal']
             imageio.imwrite(
                 os.path.join(viz_path, fname + ".normal.jpg"),
-                im_tensor2np(render_normal * 0.5 + 0.5)
+                im_tensor2np(render_normal * (-0.5) + 0.5)
             )
-            '''
+            
     torch.cuda.synchronize()
     eps_time = time.perf_counter() - eps_time
     peak_mem = torch.cuda.memory_stats()["allocated_bytes.all.peak"] / 1024 ** 3
@@ -154,6 +159,9 @@ if __name__ == "__main__":
     parser.add_argument("--use_jpg", action="store_true")
     parser.add_argument("--overwrite_ss", default=None, type=float)
     parser.add_argument("--overwrite_vox_geo_mode", default=None)
+    parser.add_argument("--mod_k", default=1, type=int,
+                    help="Render only frames with (idx % mod_k == 0). Use 1 to render all.")
+
     args = parser.parse_args()
     print("Rendering " + args.model_path)
 

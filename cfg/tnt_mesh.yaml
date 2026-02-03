@@ -18,7 +18,7 @@ data:
 regularizer:
   lambda_T_inside: 0.01
   lambda_R_concen: 0.1
-  lambda_vg_density : 1e-11
+  lambda_vg_density : 0.0 # 1e-11
   vg_from : 6000
   vg_until : 10000
   vg_decay_every : 2000
@@ -35,13 +35,13 @@ regularizer:
   ge_drop_ratio : 0.0
   lambda_ls_density : 1e-10
   ls_from : 0
-  ls_until : 10000
+  ls_until : 6000
   ls_decay_every : 2000
   ls_decay_mult : 0.25
   ls_sparse : False
   ls_drop_ratio : 0.0
-  lambda_pi3_normal : 0.01
+  lambda_pi3_normal : 0.0
   pi3_normal_from : 0
   pi3_normal_end : 8000
   pi3_normal_decay_every : 4000
-  pi3_normal_decay_mult : 0.5
+  pi3_normal_decay_mult : 1.0

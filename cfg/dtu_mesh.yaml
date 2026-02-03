@@ -8,12 +8,12 @@
 
 # See `src/config.py` for the base setup.
 data:
-  eval: False
+  eval: True
   blend_mask: False
   res_downscale: 2.0
 
 model:
-  outside_level: 1
+  outside_level: 0
   vox_geo_mode: triinterp3
   black_background: True
 

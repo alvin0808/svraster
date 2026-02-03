@@ -48,7 +48,7 @@ cfg.bounding = CfgNode(dict(
     # default | camera_median | camera_max | forward | pcd
     bound_mode = "default", # The main region bounding mode
     bound_scale = 1.0,        # Scaling factor of the bound
-    forward_dist_scale = 1.0, # For forward mode
+    forward_dist_scale = 0.3, # For forward mode
     pcd_density_rate = 0.1,   # For pcd mode
 ))
 
@@ -83,7 +83,7 @@ cfg.regularizer = CfgNode(dict(
     sparse_depth_until = 10_000,
 
     # Mask loss
-    lambda_mask = 0.0,
+    lambda_mask = 0.1,
 
     # Depthanything loss
     lambda_depthanythingv2 = 0.0,
@@ -130,9 +130,9 @@ cfg.regularizer = CfgNode(dict(
 
     lambda_pi3_normal = 0.1,
     pi3_normal_from=0,
-    pi3_normal_end=4000,
-    pi3_normal_decay_every=2000,
-    pi3_normal_decay_mult=1.0,
+    pi3_normal_end=6000,
+    pi3_normal_decay_every=4000,
+    pi3_normal_decay_mult=0.1,
 
     # Total variation loss of density grid
     lambda_tv_density = 1e-8,
@@ -142,7 +142,7 @@ cfg.regularizer = CfgNode(dict(
     tv_decay_mult = 0.8,
     tv_sparse = False,
 
-    lambda_vg_density = 1e-11,
+    lambda_vg_density = 0.0, #1e-11,
     vg_from = 6000,
     vg_until = 8000,
     vg_decay_every = 2000,
@@ -150,7 +150,7 @@ cfg.regularizer = CfgNode(dict(
     vg_sparse = False,
     vg_drop_ratio = 0.5,
 
-    lambda_ge_density = 2e-8,
+    lambda_ge_density = 1e-8,
     ge_from = 0,
     ge_until = 6000,
     ge_decay_every = 2000,
@@ -207,7 +207,7 @@ cfg.init = CfgNode(dict(
 
 cfg.procedure = CfgNode(dict(
     # Schedule
-    n_iter = 10_000,
+    n_iter = 8_000,
     sche_mult = 1.0,
     seed=3721,
 
