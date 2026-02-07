@@ -52,13 +52,34 @@ pip install -e cuda/ --no-build-isolation
 
 
 ## Reconstructing your own capture
-Below go through the workflow for reconstruction from a scene capturing. Check [example.ipynb](./notebooks/example.ipynb) for an actual example.
+Below go through the workflow for reconstruction from a scene capturing. 
+
 
 ### Data preparation
 We recommend to follow [InstantNGP](https://github.com/NVlabs/instant-ngp/blob/master/docs/nerf_dataset_tips.md#colmap) video or images processing steps to extract camera parameters using COLMAP. [NerfStudio](https://docs.nerf.studio/quickstart/custom_dataset.html) also works.
 
 We now only support pinhole camera mode. Please preprocess with `--colmap_camera_model PINHOLE` of InstantNGP script or `--camera-type pinhole` of NerfStudio script.
 
+### Pi3 initialization (COLMAP-only)
+
+Before training, you can optionally run Pi3 to generate an initial aligned point cloud from your COLMAP reconstruction.
+Currently, this pipeline assumes **COLMAP-format data** (i.e., `sparse/0/images.bin` exists).
+> Note: This is a **preliminary example** and will be extended to support the NerfStudio data format.
+
+#### Run Pi3 export + COLMAP pose alignment (one command)
+
+```bash
+python scripts/pi3/run_export_and_align_colmap.py \
+  --data_root /home/user/data/drawer_ex_3/images \
+  --model /home/user/projects/Pi3/model.safetensors \
+  --out_dir output/pi3x_export_drawer_ex_3 \
+  --gt_bin /home/user/data/drawer_ex_3/sparse/0/images.bin \
+  --out_ply /home/user/data/drawer_ex_3/sparse/0/aligned_points3D.ply \
+  --interval 2 \
+  --conf_th 0.05 \
+  --sample_rate 1.0
+```
+> Note: This is currently a **preliminary example** and will be refined
 ### Scene optimization
 ```bash
 python train.py --eval --source_path $DATA_PATH --model_path $OUTPUT_PATH
