@@ -1332,7 +1332,7 @@ if __name__ == "__main__":
     parser.add_argument("--load_optimizer", action='store_true')
     parser.add_argument("--save_optimizer", action='store_true')
     parser.add_argument("--save_quantized", action='store_true')
-    parser.add_argument("--seunghun", action='store_true', help="Enable Seunghun's custom settings.") #seunghun
+    parser.add_argument("--seunghun", action='store_true', default=True, help="Enable Seunghun's custom settings.") #seunghun
 
     args, cmd_lst = parser.parse_known_args()
 
