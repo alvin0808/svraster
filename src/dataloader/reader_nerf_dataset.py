@@ -129,7 +129,7 @@ def read_nerf_dataset(path, extension, test_every, eval):
     point_cloud = None
     correspondent = None
     sfm_data = None
-    ply_path = os.path.join(path, "points3D.ply")
+    ply_path = os.path.join(path, "aligned_points3D.ply")
     txt_path = os.path.join(path, "points3D.txt")
     if os.path.exists(ply_path):
         points, colors, normals = fetchPly(ply_path)
@@ -155,12 +155,13 @@ def read_nerf_dataset(path, extension, test_every, eval):
             point_id_to_image_ids=None
         )
 
-
+    '''
     cor_path = os.path.join(path, "points_correspondent.json")
     if os.path.exists(cor_path):
         assert point_cloud is not None
         with open(cor_path) as f:
             correspondent = json.load(f)
+            '''
 
     # Load train/test camera info
     if os.path.exists(os.path.join(path, "transforms_train.json")):

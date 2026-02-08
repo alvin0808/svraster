@@ -141,11 +141,13 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
             conf_path = conf_paths[idx]
             conf = to_tensor(Image.open(conf_path).convert('L'))
         # Load sparse depth
+        '''
         if extr.name in correspondent:
             sparse_pt = points[correspondent[extr.name]]
         else:
             sparse_pt = None
-
+        '''
+        sparse_pt = None
         # Pack eveything
         cam_info = CameraInfo(
                 image_name=image_name,
