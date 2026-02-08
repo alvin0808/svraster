@@ -60,26 +60,90 @@ We recommend to follow [InstantNGP](https://github.com/NVlabs/instant-ngp/blob/m
 
 We now only support pinhole camera mode. Please preprocess with `--colmap_camera_model PINHOLE` of InstantNGP script or `--camera-type pinhole` of NerfStudio script.
 
-### Pi3 initialization (COLMAP-only)
+### Pi3 initialization 
 
 Before training, you can optionally run Pi3 to generate an initial aligned point cloud from your COLMAP reconstruction.
-Currently, this pipeline assumes **COLMAP-format data** (i.e., `sparse/0/images.bin` exists).
-> Note: This is a **preliminary example** and will be extended to support the NerfStudio data format.
 
+#### Common arguments
+
+- `--data_root`  
+  Path to the image folder used by Pi3. The folder should contain your input RGB images.
+
+- `--model`  
+  Path to Pi3 weights, e.g. `model.safetensors`.
+
+- `--out_dir`  
+  Output directory for intermediate Pi3 exports, including:
+  - `camera_poses_{i}.pt` (poses per split)
+  - `point_cloud_final_sor_filtered_{i}.ply` (point clouds per split)
+
+- `--out_ply`  
+  Output path for the final merged aligned point cloud (`.ply`).
+
+- `--interval`  
+  Split factor for long sequences (useful when you have many images, e.g. >50).  
+  Pi3 will export results multiple times with different starting offsets:
+  - `i = 0, 1, ..., interval-1`
+  - each split uses frames: `i, i+interval, i+2*interval, ...`  
+  Larger `interval` reduces per-run memory/time and makes the pipeline more robust on long sequences.
+
+- `--sample_rate`  
+  Random keep ratio for the final merged `.ply`.  
+  Example: `--sample_rate 0.5` keeps ~50% of the aligned points (useful to reduce file size).
+
+---
 #### Run Pi3 export + COLMAP pose alignment (one command)
 
 ```bash
 python scripts/pi3/run_export_and_align_colmap.py \
-  --data_root /home/user/data/drawer_ex_3/images \
-  --model /home/user/projects/Pi3/model.safetensors \
-  --out_dir output/pi3x_export_drawer_ex_3 \
-  --gt_bin /home/user/data/drawer_ex_3/sparse/0/images.bin \
-  --out_ply /home/user/data/drawer_ex_3/sparse/0/aligned_points3D.ply \
+  --data_root /path/to/your_dataset/images \
+  --model /path/to/model.safetensors \
+  --out_dir output/pi3_export_colmap \
+  --gt_bin /path/to/your_dataset/sparse/0/images.bin \
+  --out_ply /path/to/your_dataset/sparse/0/aligned_points3D.ply \
   --interval 2 \
   --conf_th 0.05 \
-  --sample_rate 1.0
+  --sample_rate 0.5
 ```
-> Note: This is currently a **preliminary example** and will be refined
+#### COLMAP format requirements
+
+Your dataset directory result should look like:
+```text
+your_dataset/
+├── images/                 # input images
+├── conf/                   # confidence outputs
+├── normal/                 # normal outputs
+└── sparse/
+    └── 0/
+        ├── images.bin      # COLMAP registered images (extrinsics)
+        ├── cameras.bin
+        └── aligned_points3D.ply   # final aligned point cloud (generated)
+```
+
+- --gt_bin must point to sparse/0/images.bin.
+#### Run Pi3 export + Nerf pose alignment (one command)
+````bash
+python scripts/pi3/run_export_and_align_nerf.py \
+  --data_root /path/to/your_nerf_dataset/image \
+  --gt_json /path/to/your_nerf_dataset/transforms_train.json \
+  --model /path/to/model.safetensors \
+  --out_dir output/pi3_export_nerf \
+  --out_ply /path/to/your_nerf_dataset/aligned_points3D.ply \
+  --interval 1 \
+  --sample_rate 0.5
+````
+#### NeRF (transforms_*.json) format requirements
+
+Your dataset directory result should look like:
+```text
+your_nerf_dataset/
+├── image/                 # input images
+├── conf/                   # confidence outputs
+├── normal/                 # normal outputs
+├── transforms_train.json   # GT poses (OpenGL c2w)
+├── transforms_test.json    # (optional)
+└── aligned_points3D.ply    # final aligned point cloud (generated)
+```
 ### Scene optimization
 ```bash
 python train.py --eval --source_path $DATA_PATH --model_path $OUTPUT_PATH
