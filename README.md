@@ -13,7 +13,30 @@ We extend the recently proposed sparse voxel rasterization paradigm to the task 
 - This project is under active development and not ready for stable use yet. We will update instructions and benchmarks soon.
 
 ## Install
-### 1) Clone this repository (with PI3 submodule)
+```bash
+# 1) Clone (with PI3)
+git clone --recursive https://github.com/alvin0808/SVRecon.git
+cd SVRecon
+# If you cloned without --recursive: git submodule update --init --recursive
+
+# 2) Conda env
+conda create -n svrecon python=3.10 -y
+conda activate svrecon
+
+# 3) PyTorch (tested: 2.5.0 + CUDA 12.4)
+pip install torch==2.5.0 torchvision==0.20.0 --index-url https://download.pytorch.org/whl/cu124
+
+# 4) Optional CUDA toolkit inside conda
+conda install -y -c "nvidia/label/cuda-12.4.0" cuda-toolkit
+
+# 5) Python deps (includes PI3 deps)
+pip install -r requirements.txt
+
+# 6) Build and install sparse voxel CUDA rasterizer
+pip install -e cuda/ --no-build-isolation
+
+```
+<!-- ### 1) Clone this repository (with PI3 submodule)
 ```bash
 git clone --recursive https://github.com/alvin0808/SVRecon.git
 cd SVRecon
@@ -47,7 +70,7 @@ pip install -r requirements.txt
 If the build process cannot find torch due to build isolation, use --no-build-isolation.
 ```bash
 pip install -e cuda/ --no-build-isolation
-```
+``` -->
 
 
 
@@ -159,7 +182,9 @@ The configuration is defined by the following three, the later overwrites the fo
 - `--cfg_files`: Sepcify a list of config files, the later overwrites the former. Some examples are under `cfg/`.
 - command line: Any field defined in `src/config.py` can be overwritten through command line. For instances: `--data_device cpu`, `--subdivide_save_gpu`.
 
-Like InstantNGP and other NeRF variants, defining a proper main scene bounding box is crucial to quality and processing time. Note that the main scene bound is defined for the main 3D region of interest. There are another `--outside_level` (default 5) Octree levels for the background region. The default main scene bound heuristic may work well in many cases but you can manually tweak them for a better results or covering new type of capturing trajectory:
+Like InstantNGP and other NeRF variants, setting a proper main scene bounding box is important for both quality and speed. In SVRecon, it also determines where continuity loss is applied, since the continuity regularization is enforced only inside the main bound.
+
+The main bound should cover the primary 3D region of interest. For rays and geometry outside this region, SVRecon allocates additional octree levels via --outside_level (default: 5). This is especially helpful when you do not provide foreground masks, so rays leaving the main bound can still be represented. You can control the bound behavior using the following options:
 - `--bound_mode`:
     - `default`
         - Use the suggested bbox if given by dataset. Otherwise, it automatically chose from `forward` or `camera_median` modes.
@@ -175,63 +200,57 @@ Like InstantNGP and other NeRF variants, defining a proper main scene bounding b
 
 For scenes with background masked out, use `--white_background` or `--black_background` to specify the background color.
 
-Other hyperparameter suggestions:
-- Ray termination
-    - `--lambda_T_inside 0.01` to encourage rays to stop inside the Octree. Useful for real-world scenes.
-    - `--lambda_T_concen 0.1` to encourage transmittance to be either 0 or 1. Useful for scenes whose background pixels are set to white or black. Remember to set either `--white_background` or `--black_background` in this case.
-- Geometry
-    - `--lambda_normal_dmean 0.001 --lambda_normal_dmed 0.001` to encourage self-consistency between rendered depth and normal.
-        - Also cite [2dgs](https://arxiv.org/abs/2403.17888) if you use this in your research.
-    - `--lambda_ascending 0.01` to encourage density to be increasing along ray direction.
-    - `--lambda_sparse_depth 0.01` to use COLMAP sparse points loss to guide rendered depth.
-        - Also cite [dsnerf](https://arxiv.org/abs/2107.02791) if you use this in your research.
-    - `--lambda_depthanythingv2 0.1` to use depthanythingv2 loss to guide rendered depth.
-        - It uses the huggingface version.
-        - It automatically saves the estimated depth map at the first time you activate this loss for the scene.
-        - Also cite [depthanythingv2](https://arxiv.org/abs/2406.09414) and [midas](https://arxiv.org/abs/1907.01341) if you use this in your research.
-    - `--lambda_mast3r_metric_depth 0.1` to use the metric depth derived from MASt3R to guide the rendered depth.
-        - You need to clone MASt3R and install all its dependency.
-        - You also need to set `--mast3r_repo_path {abs_path_to_mast3r_repo}`.
-        - It automatically saves the estimated depth map at the first time you activate this loss for the scene.
-        - Also cite [MASt3R](https://arxiv.org/abs/2406.09756) and [DUSt3R](https://arxiv.org/abs/2312.14132) if you use this in your research.
+Other hyperparameter suggestions:    
+
+- Continuity losses for SDF geometry
+
+    SVRecon uses the following continuity losses for SDF geometry.
+    The default weights are already well tuned, so you usually do not need to change them.
+    You can still adjust them if your scene requires stronger or weaker regularization.
+
+    `--lambda_ge_density`
+    Global Eikonal loss that enforces unit SDF gradient magnitude using dense sampling.
+
+    `--lambda_vg_density`
+    Local voxelwise Eikonal loss.
+    This is called voxel gradient in the code and is mainly used in fine stages.
+
+    `--lambda_ls_density`
+    Laplacian smoothness loss that reduces high frequency discontinuities across voxel boundaries.
+
+    `--lambda_normal_dmean --lambda_normal_dmed`
+    Depth normal consistency regularizer that stabilizes geometry.
+    If you discuss this term in your paper, you may cite 2DGS.
+
+- Training iterations
+
+    Use `--n_iter 8000` for smaller scenes such as DTU, and `--n_iter 10000` for larger scenes such as Tanks and Temples.
+
+
+   
 - `--save_quantized` to apply 8 bits quantization to the saved checkpoints. It typically reduce ~70% model size with minor quality difference.
 
-### Measuring FPS
-```bash
-python render.py $OUTPUT_PATH --eval_fps
-```
-
-### Rendering views
-- Rendering full training views:
-    - `python render.py $OUTPUT_PATH --skip_test --rgb_only --use_jpg`
-- Rendering testing views and evaluating results:
-    - It only works when training with `--eval`.
-    - `python render.py $OUTPUT_PATH --skip_train`
-    - `python eval.py $OUTPUT_PATH`
-- Render fly-through video:
-    - `python render_fly_through.py $OUTPUT_PATH`
 
 
 ### Meshing
-Remember to train with `--lambda_normal_dmean 0.001 --lambda_normal_dmed 0.001` to get a better geometry. Using sparse depth from COLMAP may also help `--lambda_sparse_depth 0.01`. After the scene optimization completed, run:
+After the scene optimization completed, choose one of the following:
+
+#### TSDF fusion meshing
 ```bash
 python extract_mesh.py $OUTPUT_PATH
 ```
 
+#### Direct SDF meshing
+```bash
+python extract_mesh_sdf.py $OUTPUT_PATH
+```
 
 ## Experiments on public dataset
 
-**Note:** Be sure to double check the following two experimental details which has non-trivial impact to the quantitative results.
-- Ground-truth downsampling: Results from (1) the internal downsampling `--res_downscale` and (2) the preprocessed down-sampled images specified by `--images` are very different. We follow the original 3DGS to use `--images`.
-- LPIPS input scale: We follow the original 3DGS to use RGB in range of [0, 1] as default. The correct implementation should be in [-1, 1] which is reported as the corrected LPIPS by `eval.py`.
+**Note:** For fair comparison, keep the image preprocessing and downsampling protocol consistent across methods
 
 ### Download the 3rd-party processed datasets
-- Novel-view synthesis
-    - [Mip-NeRF360 dataset](https://jonbarron.info/mipnerf360/)
-    - [T&T and DeepBlending dataset](https://github.com/graphdeco-inria/gaussian-splatting#running)
-    - [Synthetic NeRF dataset](https://www.matthewtancik.com/nerf/)
-    - [Scannet++ dataset](https://kaldir.vc.in.tum.de/scannetpp/)
-        - Check [scripts/scannetpp_preproc.py](./scripts/scannetpp_preproc.py) for pre-processing.
+
 - Mesh reconstruction
     - [DTU dataset](https://github.com/Totoro97/NeuS)
         - Check [scripts/dtu_preproc.py](./scripts/dtu_preproc.py) for pre-processing.
@@ -239,23 +258,19 @@ python extract_mesh.py $OUTPUT_PATH
 
 ### Running base setup
 ```bash
-exp_dir="baseline"
+# Work in progress
+```
+<!-- exp_dir="baseline"
 other_cmd_args=""
 
 # Run training
-./scripts/mipnerf360_run.sh     output/mipnerf360/baseline     $other_cmd_args
-./scripts/synthetic_nerf_run.sh output/synthetic_nerf/baseline $other_cmd_args
-./scripts/tandt_db_run.sh       output/tandt_db/baseline       $other_cmd_args
 ./scripts/dtu_run.sh            output/dtu/baseline            $other_cmd_args
 ./scripts/tnt_run.sh            output/tnt/baseline            $other_cmd_args
 
 # Summarize results
-python scripts/mipnerf360_stat.py     output/mipnerf360/baseline
-python scripts/synthetic_nerf_stat.py output/synthetic_nerf/baseline
-python scripts/tandt_db_stat.py       output/tandt_db/baseline
 python scripts/dtu_stat.py            output/dtu/baseline
 python scripts/tnt_stat.py            output/tnt/baseline
-```
+``` -->
 
 
 ## Acknowledgement

@@ -142,7 +142,7 @@ cfg.regularizer = CfgNode(dict(
     tv_decay_mult = 0.8,
     tv_sparse = False,
 
-    lambda_vg_density = 0.0, #1e-11,
+    lambda_vg_density = 1e-11,
     vg_from = 6000,
     vg_until = 8000,
     vg_decay_every = 2000,
