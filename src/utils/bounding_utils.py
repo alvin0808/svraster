@@ -2,7 +2,7 @@ import numpy as np
 
 
 def decide_main_bounding(cfg_bounding, tr_cams, pcd, suggested_bounding):
-    if cfg_bounding.bound_mode == "default" and suggested_bounding is not None:
+    if cfg_bounding.bound_mode in ["default", "forward"] and suggested_bounding is not None:
         print("Use suggested bounding")
         center = suggested_bounding.mean(0)
         radius = (suggested_bounding[1] - suggested_bounding[0]) * 0.5
