@@ -1361,10 +1361,8 @@ if __name__ == "__main__":
         cfg.regularizer.n_dmean_from = 2000  # 
         cfg.regularizer.lambda_normal_dmed = 0.001
         cfg.regularizer.n_dmed_from = 1000
-        cfg.procedure.prune_from = 1000
         cfg.procedure.prune_every = 1000
         cfg.procedure.prune_until = 9000
-        cfg.procedure.subdivide_from = 1000
         cfg.procedure.subdivide_every = 250
         cfg.regularizer.lambda_mask = 0.0
 
