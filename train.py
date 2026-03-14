@@ -339,9 +339,11 @@ def training(args):
         loss_dict = {"photo": loss_photo}
         '''
         # Loss
-        gt_mask = cam.mask.cuda() 
-
-        gt_image_modified = gt_image *gt_mask
+        if cfg.data.use_mask:
+            gt_mask = cam.mask.cuda() 
+            gt_image_modified = gt_image *gt_mask
+        else:
+            gt_image_modified = gt_image
 
         mse = loss_utils.l2_loss(render_image, gt_image_modified)
 
@@ -1362,7 +1364,7 @@ if __name__ == "__main__":
         cfg.procedure.prune_from = 1000
         cfg.procedure.prune_every = 1000
         cfg.procedure.prune_until = 9000
-        cfg.procedure.subdivide_from = 100
+        cfg.procedure.subdivide_from = 1000
         cfg.procedure.subdivide_every = 250
         cfg.regularizer.lambda_mask = 0.0
 

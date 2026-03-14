@@ -16,10 +16,18 @@ data:
 
 regularizer:
   lambda_T_concen: 0.1 #0.1
+  
+  lambda_normal_dmean: 0.001
+  lambda_normal_dmed: 0.001
+  lambda_mask: 0.0
+  lambda_pi3_normal : 0.0
 
 init:
   sh_degree_init: 1
+  init_sparse_points: False
 
 procedure:
   subdivide_all_until: 2000 # 1000Subdivide all at the first time
   subdivide_samp_thres: 0.5  # Enable smaller voxels
+  prune_from: 2000
+  subdivide_from: 1000

@@ -110,7 +110,7 @@ def compute_iter_idx(num_data, num_iter):
         tr_iter_idx.extend(lst)
     return tr_iter_idx[:num_iter]
 
-'''
+
 def compute_iter_idx_sparse(num_data, num_iter, skip_num=1):
     tr_iter_idx = []
     
@@ -119,7 +119,7 @@ def compute_iter_idx_sparse(num_data, num_iter, skip_num=1):
         random.shuffle(lst)
         tr_iter_idx.extend(lst)
     return tr_iter_idx[:num_iter]
-    '''
+'''
 def compute_iter_idx_sparse(num_data, num_iter, skip_num=1):
     tr_iter_idx = []
 
@@ -132,7 +132,7 @@ def compute_iter_idx_sparse(num_data, num_iter, skip_num=1):
         tr_iter_idx.extend(lst)
 
     return tr_iter_idx[:num_iter]
-
+'''
 
 class CameraList:
     def __init__(self, cam_infos, cfg_data, dataset_downscale=1.0, camera_params_only=False):

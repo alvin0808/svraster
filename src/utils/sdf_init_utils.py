@@ -65,7 +65,7 @@ def initialize_sdf_from_sfm(sfm_init, cameras, grid_pts_key, scene_center, scene
     '''
     #filtered_xyz= sfm_init.points_xyz #will not use filtering for now
     
-    sampling_rate = 0.01
+    sampling_rate = 0.1
     print("step 1/4: Downsampling SfM points for SDF initialization...")
     num_points = len(sfm_init.points_xyz)
     sample_indices = np.random.choice(num_points, size=int(num_points * sampling_rate), replace=False)

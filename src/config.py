@@ -36,6 +36,7 @@ cfg.data = CfgNode(dict(
     depth_scale = 1.0,
     data_device = "cpu",
     eval = False,
+    use_mask = False, # Whether to use mask for photometric loss
     test_every = 8, # Only if dataset has no testset && eval=True
 ))
 
@@ -222,7 +223,7 @@ cfg.procedure = CfgNode(dict(
     prune_thres_final = 0.03,
 
     # Adaptive voxel pruning
-    subdivide_from = 1000,
+    subdivide_from = 250,
     subdivide_every = 1000,
     subdivide_until = 9000,
     subdivide_samp_thres = 1.0, # A voxel max sampling rate should larger than this.
