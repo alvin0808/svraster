@@ -33,6 +33,39 @@ from .colmap_loader import read_extrinsics_text, read_intrinsics_text, \
                            read_colmap_ply, qvec2rotmat, fetchPly
 
 
+def _suggested_bounding_from_llff_poses_bounds(path, cam_infos):
+    poses_bounds_path = os.path.join(path, "poses_bounds.npy")
+    if not os.path.isfile(poses_bounds_path) or len(cam_infos) == 0:
+        return None
+
+    bounds = np.load(poses_bounds_path)[:, -2:]
+    if bounds.ndim != 2 or bounds.shape[1] != 2:
+        return None
+
+    far = bounds[:, 1].astype(np.float32)
+    valid_far = far[np.isfinite(far) & (far > 0)]
+    if valid_far.size == 0:
+        return None
+
+    cam_positions = np.stack([np.linalg.inv(cam.w2c)[:3, 3] for cam in cam_infos], axis=0)
+    cam_lookats = np.stack([np.linalg.inv(cam.w2c)[:3, 2] for cam in cam_infos], axis=0)
+
+    center = cam_positions.mean(0)
+    lookat = cam_lookats.mean(0)
+    lookat_norm = np.linalg.norm(lookat)
+    if lookat_norm < 1e-8:
+        return None
+    lookat = lookat / lookat_norm
+
+    radius = np.quantile(valid_far, 0.9).astype(np.float32)
+    center = center + lookat * (radius * 0.5)
+
+    return np.stack([
+        center - radius,
+        center + radius,
+    ]).astype(np.float32)
+
+
 def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, points, correspondent, depth_paths, normal_paths):
 
     print(f"images_folder={images_folder}")
@@ -51,7 +84,7 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
         normal_paths = natsort.natsorted(
             glob.glob(normal_paths, recursive=True)
         )
-        #print(len(normal_paths), len(keys))
+        print(f"normal_paths={normal_paths}")
         assert len(normal_paths) == len(keys), "Number of normal maps mismatched."
         conf_paths = [p.replace("normal", "conf") for p in normal_paths]
 
@@ -60,6 +93,12 @@ def read_cameras_from_colmap(cam_extrinsics, cam_intrinsics, images_folder, poin
         print(f"Found {len(conf_paths)} confidence maps.")
     cam_infos = []
     for idx, key in enumerate(keys):
+        depth_path = ""
+        depth = None
+        normal_path = ""
+        normal = None
+        conf_path = ""
+        conf = None
 
         extr = cam_extrinsics[key]
         intr = cam_intrinsics[extr.camera_id]
@@ -239,7 +278,7 @@ def read_colmap_dataset(path, images, eval, test_every=8, depth_paths="", normal
             suggested_center + suggested_radius,
         ])
     else:
-        suggested_bounding = None
+        suggested_bounding = _suggested_bounding_from_llff_poses_bounds(path, cam_infos)
 
     # Pack scene info
     scene_info = SceneInfo(
